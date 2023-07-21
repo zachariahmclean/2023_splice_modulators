@@ -1,0 +1,1527 @@
+---
+title: "PMS1 as a target for splice modulation to prevent somatic CAG repeat expansion in Huntington’s disease"
+format: 
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+    toc: true
+    toc-depth: 2
+    page-layout: full
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+# delete all files in output dir to make sure they are generated each render and there's not carryover with name changes
+
+do.call(file.remove, list(list.files("outputs/", full.names = TRUE)))
+
+
+```
+
+```{r}
+library(tidyverse)
+library(marginaleffects)
+library(ggforce)
+library(patchwork)
+library(ggtext)
+
+```
+
+# Figure 1
+
+## Figure 1c
+
+```{r}
+
+fig1c_data <- read_csv("data/fig1/fig1c.csv") |>
+  mutate(peak = factor(peak,
+                       levels = c("Exon 49-50", "Exon 49-50a-50", "Exon 49-50b")),
+         drug = factor(drug, 
+                       labels = c("Branaplam", "Risdiplam")))
+
+(fig1c_g <-  fig1c_data %>%
+  ggplot(aes(x = as.factor(treatment), y = average_prop, fill = fct_rev(peak))) +
+  geom_col() + 
+  facet_grid(cols = vars(drug), scales = "free_x", space = "free_x") +
+  # scale_fill_viridis_d(begin = 0.97, end = 0.3,option = "viridis") +
+  scale_fill_brewer(palette = "Pastel2") +
+  labs(y = "Band proportion", x = "Concentration (nM)", fill = "Splice product") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        legend.position = "none") )
+
+```
+
+## Figure 1d
+
+```{r}
+
+fig1d_data <- read_csv("data/fig1/fig1d.csv") |>
+  mutate(upstream_ss = factor(upstream_ss,
+                              levels = c("G","C","A","T")),
+         treatment = ifelse(str_detect(treatment, "Bran"), "100 nM\nBranaplam", treatment))
+
+(fig1d_g <- fig1d_data |>
+  ggplot(aes(x = upstream_ss, y = average_prop, fill = fct_rev(peak_name))) +
+  geom_col() + 
+  facet_wrap(vars(fct_rev(treatment))) +
+  scale_fill_manual(values = c("#F4CAE4",
+                               RColorBrewer::brewer.pal(n = 3, "Pastel2"))) +
+  theme_minimal() +
+    labs(y = "Band proportion",
+         x = "Minigene exon 49\nfinal nucleotide",
+         fill = "Splice product"))
+  
+
+```
+
+```{r}
+fig1_g <- fig1c_g + fig1d_g  + 
+  plot_layout(widths = c(0.6,0.4)) +
+  plot_annotation(tag_levels = list(c("c", "d")))
+
+ggsave("outputs/fig1.pdf",
+       fig1_g,
+       width = 7.5,
+       height = 2.5)
+```
+
+# Figure 2
+
+## Figure 2a
+
+
+```{r}
+
+fig2a_data <- read_csv("data/fig2/fig2a_gnomad.csv")
+
+(fig2a_g <-  fig2a_data |>
+  ggplot(aes(position, allele_frequency)) +
+  geom_vline(xintercept = c(3215349, 3215463),
+             lty = 3,
+             alpha = 0.5) +
+  geom_vline(xintercept = c(3214291, 3214436, 3215685, 3215862),
+             alpha = 0.5) +
+  geom_point(aes(colour = have_cell_lines),
+             alpha = 0.5) +
+  ggrepel::geom_label_repel(
+             data = fig2a_data[which(fig2a_data$have_cell_lines == TRUE),] |>
+                        distinct(position, allele_frequency, rs_i_ds),
+             aes(label = rs_i_ds),
+             size = 2,
+             fill = alpha(c("white"),0.5)) +
+  scale_y_log10(minor_breaks = NULL) +
+  scale_x_continuous(breaks = c(3214000, 3214500, 3215000, 3215500),
+                     minor_breaks = NULL) +
+  annotation_logticks(outside = FALSE, sides = "l") +
+  theme_minimal() +
+    labs(colour = "Variant\nrepresented\nin cell lines\ntested", y = "MAF", x = "GRCh37 chr4 position",
+         title = "HTT intron 49") +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5, size = 10,
+                                    margin = margin(),
+                                    vjust = -5))
+
+)
+
+
+
+
+```
+
+## Figure 2b
+
+```{r}
+fig2b_data <- read_csv("data/fig2/fig2b_cell_lines.csv")
+fig2b_rs362331 <- fig2b_data |>
+  filter(rs362331_status == "0/1",
+         !rs_i_ds %in% c("rs145498084", "rs772437678")) |>
+  mutate(rs_i_ds = "rs362331",
+         position = 3215735)
+
+fig2b_plot_data <- fig2b_data |>
+  bind_rows(fig2b_rs362331) |>
+    mutate(rs_i_ds = fct_reorder(rs_i_ds, position),
+           rs_i_ds = fct_relevel(rs_i_ds,
+                                 "Reference",
+                                 after = length(unique(rs_i_ds))))
+
+
+
+cell_line_total <- fig2b_plot_data |>
+  group_by(treatment, rs_i_ds) |>
+  summarise(n = n(),
+            cell_lines = n_distinct(cell_line_unique_number)) |>
+  ungroup() |>
+  complete(treatment, rs_i_ds, fill = list(n = 0, cell_lines = 0))
+
+
+(fig2b_g <- fig2b_plot_data |>
+  ggplot(aes(rs_i_ds, can_peak_prop)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.23,alpha = 0.5) +
+  geom_text(data = cell_line_total,
+            aes(rs_i_ds, 1.21,
+                label = paste0(cell_lines, "\n",n)),
+            size = 2) +
+  geom_text(data = data.frame(treatment = unique(fig2b_data$treatment),
+                              label = rep("N= \nn=",3)),
+            aes(0.75, 1.21, label = label),
+            size = 2) +
+  geom_blank(aes(y = 1.3)) +
+  ggforce::facet_col(vars(fct_rev(treatment))) +
+  scale_y_continuous(breaks = c(0,0.5,1),
+                     minor_breaks = NULL) +
+  labs(y = "Canonical exon 49-50 band proportion", x = "Variant",
+       colour = "Treatment") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.title.x = element_blank()) 
+)
+
+```
+
+### Branaplam stats
+```{r}
+
+fig_2b_lm_bran <- fig2b_data %>%
+  mutate(rs_i_ds = ifelse(is.na(rs_i_ds), "ref", rs_i_ds)) %>%
+  filter(str_detect(treatment, "Branaplam")) %>%
+  lme4::lmer(can_peak_prop ~ rs_i_ds + rs362331_status + (1 | experiment), data = .)
+
+avg_comparisons(fig_2b_lm_bran) |>
+  knitr::kable()
+
+```
+
+
+### Risdiplam stats
+```{r}
+
+
+fig_2b_lm_ris <- fig2b_data %>%
+  mutate(rs_i_ds = ifelse(is.na(rs_i_ds), "ref", rs_i_ds)) %>%
+  filter(str_detect(treatment, "Risdiplam")) %>%
+  lm(can_peak_prop ~ rs_i_ds, data = .)
+
+
+summary(fig_2b_lm_ris)
+
+```
+
+### 50b/50a raio for variants
+
+```{r}
+fig2b_data %>%
+  mutate(rs_i_ds = ifelse(is.na(rs_i_ds), "ref", rs_i_ds)) %>%
+  filter(str_detect(treatment, "Branaplam")) %>%
+  lme4::lmer(ratio_50b_50a ~ rs_i_ds + rs362331_status + (1 | experiment), data = .) |>
+  avg_comparisons() |>
+  knitr::kable()
+
+```
+
+## Figure 2c
+
+```{r}
+fig2c_data <- read_csv("data/fig2/fig2c_ddPCR_data.csv")
+
+fig2c_numbers <- fig2c_data |> 
+  group_by(treatment, rsid) |>
+  summarise(n = n(),
+            N = length(unique(cell_line)))
+
+(fig2c_g <- fig2c_data |>
+  ggplot(aes(rsid,  rel_dmso)) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina(maxwidth = 0.75, 
+                     position = position_dodge(width = 0.75),
+                     alpha = 0.5) +
+  geom_text(data = fig2c_numbers,
+            aes(x = rsid, y = 4, label = paste0(N,"\n",n)),
+            size = 2) +
+  geom_text(data = data.frame(treatment = unique(fig2c_data$treatment),
+                              label = rep("N= \nn=",2)),
+            aes(x = 0.8, y = 4, label = label),
+            size = 2) +
+  facet_wrap(vars(fct_rev(treatment))) +
+  scale_color_brewer(palette = "Set2") +
+  scale_y_log10(limits = c(NA,5),
+                breaks = c(0.1,1)) +
+  annotation_logticks(sides = "l", outside = TRUE) +
+  coord_cartesian(clip = "off") + # Ticks outside plot
+  labs(y = "Log10 HTT ex49-ex50\nexpression relative to DMSO") +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        axis.title.x = element_blank(),
+        strip.background =element_rect(fill="white"), 
+        panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_line()
+  )
+)
+
+
+
+```
+
+```{r}
+
+
+fig2 <- ((fig2a_g / fig2c_g) | fig2b_g )+  plot_annotation(tag_levels = list(c("a","c","b")))
+
+ggsave("outputs/fig2.pdf",
+       fig2,
+       width = 7.5,
+       height = 5)
+
+```
+
+# Figure 3
+
+## Figure 3b
+
+```{r}
+
+fig3b_data <- read_csv("data/fig3/fig3b_spliceai_data.csv") |>
+  filter(allele_freq > 0)
+
+
+(fig3b_g <-  fig3b_data |>   
+  ggplot(aes(allele_freq, splice_ai_score)) + 
+  geom_point(aes(colour = exclusive_events),
+             alpha = 0.5) +
+  ggrepel::geom_label_repel(data = fig3b_data |>
+                              filter(allele_freq > 0.01 & splice_ai_score > 0),
+                            aes(label = gene_symbol),
+                            ylim = c(0.5,2),
+                            force = 5,
+                            fill = alpha(c("white"),0.5),
+                            size = 2,
+                            max.overlaps = 20,
+                            fontface="italic") +
+  ggrepel::geom_label_repel(data = fig3b_data |>
+                              filter(allele_freq > 0.01 & splice_ai_score < 0 | gene_symbol == "HTT"| allele_freq > 0.001 & splice_ai_score < 0 & gene_symbol == "ZFP82"),
+                            aes(label = gene_symbol),
+                            ylim = c(-0.5,-2),
+                            force = 5,
+                            fill = alpha(c("white"),0.5),
+                            size = 2,
+                            max.overlaps = 20,
+                            fontface="italic") +
+  scale_colour_brewer(palette = "Set2") +
+  scale_x_log10() +
+  expand_limits(x = 1, y = 1) +
+  annotation_logticks(side = "b", outside = TRUE) +
+  coord_cartesian(clip = "off") +
+  labs(x = "MAF", y = "SpliceAI score") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(vjust=-1.5),
+        axis.title.x = element_text(vjust=-1.5))
+
+)
+
+
+
+```
+
+## Figure 3c
+
+```{r}
+fig3c_data <- read_csv("data/fig3/fig3c_validation.csv") |>
+  mutate(gene = str_replace(gene, "\n", " ")) |>
+  mutate(gene = gsub("TENT2","<i>TENT2</i>",gene),
+         gene = gsub("ZFP82","<i>ZFP82</i>",gene))
+
+
+fig3c_data_n <- fig3c_data |>
+  group_by(gene, snps, drug_treatment) |>
+  summarise(N = length(unique(cell_line_unique_number)),
+            n = n()) |>
+  ungroup()
+
+
+
+(fig3c_g <- fig3c_data |>
+  ggplot(aes(x=as.factor(snps), y= peak_prop))+
+  stat_summary(fun = median, geom = "crossbar", linewidth = 0.2)+
+  ggforce::geom_sina(shape = 21) +
+  geom_text(data = fig3c_data_n,
+        aes(y = 1.2, label = paste0(N,"\n",n)),
+        position = position_dodge(width = 1),
+        size = 2.5) +
+  geom_text(data = data.frame(drug_treatment = c("50 nM", "100 nM", "100 nM"),
+                              gene = c(unique(fig3c_data$gene)[1],
+                                       unique(fig3c_data$gene)),
+                              label = rep("N= \nn=",3)),
+            aes(x = c(0.8, 0.85,0.85), y = 1.2, label = label),
+            size = 2.5) +
+  scale_y_continuous(limits = c(0,1.35)) +
+  facet_wrap(vars(gene,fct_rev(drug_treatment)))+
+  labs(y = "Canonical band\nproportion", 
+       x = "Genotype", 
+       colour = "Branaplam\nconc.") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"),
+        strip.text = ggtext::element_markdown()) 
+)
+
+
+```
+
+```{r}
+
+fig3c_data %>%
+  split(paste(.$gene, .$drug_treatment)) %>%
+  lapply(function(x) {
+    x |>
+      group_by(cell_line_unique_number, snps, drug_treatment) |>
+      summarise(peak_prop = mean(peak_prop)) |>
+      lm(peak_prop ~ snps, data = _) |>
+      summary()
+    
+    })
+
+```
+
+```{r}
+
+fig3_top <- plot_spacer() + fig3b_g + plot_layout(widths = c(0.3, 0.7))
+fig3_bottom <- plot_spacer() + fig3c_g  + plot_spacer() + 
+  plot_layout(widths = c(0.33, 0.65, 0.07))
+
+fig3 <- fig3_top / fig3_bottom + 
+  plot_layout(heights = c(1.5, 1)) + 
+  plot_annotation(tag_levels = list(c("b", "c")))
+
+ggsave("outputs/fig3.pdf",
+       fig3,
+       height = 5,
+       width = 7.5)
+
+
+```
+
+# Figure 4
+
+## Figure 4a
+
+```{r}
+fig4a_data <- read_csv("data/fig4/fig4a_data_traces.csv")
+
+(fig4a_g <-  fig4a_data |>
+  ggplot(aes(repeats, rel_height, fill = as.factor(days))) +
+  geom_col(position = position_dodge()) +
+  facet_wrap(vars(fct_rev(dox)), ncol = 1) +
+  scale_fill_manual(values = c("gray75", "gray30")) +
+  labs(x = "CAG repeat",
+       y = "Fragment proportion",
+       fill = "Day") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid.major.y  = element_blank(),
+        panel.grid.minor.y  = element_blank())
+)
+
+
+
+
+```
+
+## Figure 4b
+
+```{r}
+
+fig4b_data <- read_csv("data/fig4/fig4b_data.csv")
+
+fig4b_numbers <- fig4b_data |>
+  group_by(dox) |>
+  summarise(N = n())
+
+(fig4b_g <- fig4b_data |>
+  ggplot(aes(fct_rev(dox), gain_per_week)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_text(data = fig4b_numbers,
+        aes(y = 1.6, label = paste0(N)),
+        size = 2.5) +
+  geom_text(data = data.frame(label = "N="),
+            aes(x = c(0.89), y = 1.6, label = label),
+            size = 2.5) +
+  ggforce::geom_sina(aes(colour = as.factor(strain)),
+                     maxwidth = 0.5) +
+  scale_colour_viridis_d(option = "viridis") +
+  labs(y = "Average repeat gain\nper week",
+       colour = "Tet-On transcription") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+)
+
+
+
+
+```
+
+```{r}
+
+lm(gain_per_week ~ fct_rev(dox), data = fig4b_data) |>
+  summary()
+```
+
+## Figure 4c
+
+```{r}
+fig4c_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
+  mutate(ko = gsub("FAN1","<i>FAN1</i>",ko),
+         ko = gsub("MSH3","<i>MSH3</i>",ko),
+         ko = gsub("PMS1","<i>PMS1</i>",ko),
+         ko = fct_relevel(ko,
+                          "Empty vector"))
+
+
+(fig4c_g <- fig4c_data |>
+  ggplot(aes(size, rel_signal, colour = ko)) +
+  geom_line(linewidth = 0.05) +
+  geom_vline(aes(xintercept = modal_size ),
+             lty = 3,
+             linewidth = 0.75,
+             colour = "black") +
+  facet_grid(culture_day ~ ko) +
+  scale_colour_viridis_d(option = "inferno", end = 0.8 ) +
+  scale_y_continuous(minor_breaks = NULL) +
+  scale_x_continuous(minor_breaks = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 5),
+        strip.text = ggtext::element_markdown(size = 8.5)) +
+  labs(x = "Fragment length (bp)", y = "Relative signal intensity", title = "Pooled edited populations"))
+
+
+```
+
+## Figure 4d
+
+```{r}
+fig4d_data <- read_csv("data/fig4/fig4d_ko_repeat_gain.csv") |>
+  mutate(ko = gsub("FAN1","<i>FAN1</i>",ko),
+         ko = gsub("MSH3","<i>MSH3</i>",ko),
+         ko = gsub("PMS1","<i>PMS1</i>",ko),
+         ko = fct_relevel(ko,
+                          "Empty vector"))
+
+fig4d_numbers <- fig4d_data |>
+  group_by(ko, culture_day) |>
+  summarise(n = n())
+
+(fig4d_g <- fig4d_data |>
+  ggplot(aes(as.factor(culture_day), average_repeat_gain)) +
+  geom_boxplot(aes(colour = ko),
+               outlier.shape = NA,
+               size = 0.25) +
+  ggforce::geom_sina(aes(colour = ko),
+                     alpha = 0.7,
+                     shape = 21) +
+  geom_text(data = fig4d_numbers,
+        aes(y = 20, label = paste0(n)),
+        size = 2.5) +
+  geom_text(data = data.frame(ko = unique(fig4d_data$ko)[4],
+                              label = "n="),
+            aes(x = 0.7, y = 20, label = label),
+            size = 2.5) +
+  facet_wrap(vars(ko), nrow = 1) +
+  scale_colour_viridis_d(option = "inferno", end = 0.8 ) +
+  labs(x = "Day", colour = "group", y = "Average repeat gain", title = "Pooled edited populations") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        strip.text = ggtext::element_markdown(size = 8.4))
+)
+  
+
+```
+
+```{r}
+fig4d_lm <- fig4d_data %>%
+  lm(average_repeat_gain ~ 0 + culture_day:as.factor(ko), data = .)
+```
+
+### average repeat gain per week
+
+```{r}
+slopes(fig4d_lm,
+       variables = "culture_day",
+       by = "ko") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  as.data.frame() |>
+  knitr::kable()
+
+```
+
+### FAN1-KO vs Empty vector
+
+```{r}
+slopes(fig4d_lm,
+       variables = "culture_day",
+       by = "ko",
+       hypothesis = "b1-b4 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### PMS1-KO vs Empty vector
+
+```{r}
+slopes(fig4d_lm,
+       variables = "culture_day",
+       by = "ko",
+       hypothesis = "b2-b4 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### MSH3-KO vs Empty vector
+
+```{r}
+slopes(fig4d_lm,
+       variables = "culture_day",
+       by = "ko",
+       hypothesis = "b2-b4 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+## Figure 4e
+
+```{r}
+
+fig4e_data <- read_csv("data/fig4/fig4e_data_KO_strains.csv") |>
+  filter(!is.na(weighted_repeat_gain)) |>
+  mutate(gene_geno = gsub("MSH3","<i>MSH3</i>",gene_geno),
+         gene_geno = gsub("PMS1","<i>PMS1</i>",gene_geno),
+         gene_geno = fct_relevel(gene_geno,
+                          "+/+"))
+
+fig4e_numbers <- fig4e_data |>
+  group_by(day,gene_geno) |>
+  summarise(N = length(unique(cell_strain)),
+            n = n()) 
+
+msh3_col <- scales::viridis_pal(option = "inferno", end = 0.8 )(4)[3]
+pms1_col <- scales::viridis_pal(option = "inferno", end = 0.8 )(4)[4]
+
+(fig4e_g <- fig4e_data |>
+  ggplot(aes(as.factor(day),weighted_repeat_gain, colour = gene_geno)) +
+  geom_boxplot(outlier.shape = NA,
+               size = 0.25) +
+  ggforce::geom_sina(shape = 21,
+                     alpha = 0.5) +
+  geom_text(data = fig4e_numbers,
+            aes(x = as.factor(day), y = 12, label = paste0(N, "\n", n)),
+            colour = "black",
+            size = 2.5) +
+  geom_text(data = data.frame(gene_geno = unique(fig4e_data$gene_geno)[2],
+                              label = "N=\nn="),
+            aes(x = 0.65, y = 12, label = label),
+            size = 2.5,
+            colour = "black") +
+  facet_wrap(vars(gene_geno), nrow = 1) +
+  scale_y_continuous(limits = c(NA,13)) +
+  scale_color_manual(values = 
+                       c(msh3_col,
+                         msh3_col,
+                         pms1_col,
+                         pms1_col)
+  ) +
+  labs(y = "Average repeat gain", x = "Day", title = "Clonal edited strains") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        strip.text = ggtext::element_markdown(size = 8.4))
+)
+```
+
+```{r}
+
+
+fig4e_data |>
+  filter(day != 0) |>
+  lm(weighted_repeat_gain ~ day * gene_geno, data = _) |>
+  avg_comparisons(variables = list(gene_geno = "pairwise"))  |>
+  knitr::kable()
+
+```
+
+```{r}
+
+fig4_top_row <- fig4a_g + fig4b_g + plot_layout(widths = c(0.6,0.4)) 
+fig4_middle_row <- fig4c_g
+fig4_bottom_row <- fig4d_g + fig4e_g + plot_layout(widths = c(0.6,0.4)) 
+
+fig4 <- fig4_top_row / fig4_middle_row / fig4_bottom_row + 
+  plot_layout(heights = c(1,1, 1))  +
+  plot_annotation(tag_levels = "a")
+
+
+ggsave("outputs/fig4.pdf",
+       fig4,
+       width = 7.5,
+       height = 7.5)
+```
+
+# Figure 5
+
+## Figure 5a
+
+```{r}
+plot_average_repeat_gain = function(df){
+  
+  plot_numbers <- df |>
+    group_by(day, concentration) |>
+    summarise(n = n())
+  
+  df |>
+    ggplot(aes(as.factor(day), average_repeat_gain)) +
+    geom_boxplot(aes(colour = as.factor(concentration)),
+                 position = position_dodge2(preserve = "single"), 
+                 outlier.shape = NA) +
+    geom_point(aes(colour = as.factor(concentration)),
+                 position = position_jitterdodge(),
+               shape = 21,
+               alpha = 0.5) +
+    geom_text(data = plot_numbers,
+            aes(x = as.factor(day), y = 5, label = n,
+                colour = as.factor(concentration)),
+            size = 2.5,
+            position = position_dodge(width = 0.75)) +
+    geom_text(data = data.frame(label = "n="),
+            aes(x = 0.83, y = 5, label = label),
+            size = 2.5) +
+    facet_wrap(vars(drug)) +
+    labs(colour = "Concentration\n(nM)",
+         y = "Average repeat gain",
+         x = "Day") +
+    theme_minimal() +
+    scale_y_continuous(limits = c(-0.5,5.5)) +
+    scale_colour_viridis_d(option = "mako", end = 0.8) +
+    # scale_colour_brewer(palette = "Set2", na.value = "gray60") +
+    theme(legend.title = element_text(size = 8.5))
+  }
+```
+
+```{r}
+fig5a_data <- read_csv("data/fig5/fig5a_data_bran_instability.csv")
+
+(fig5a_g <- fig5a_data |> 
+ plot_average_repeat_gain()
+
+)
+```
+
+```{r}
+fig5a_lm <- fig5a_data %>%
+  lm(average_repeat_gain ~ 0 + day:as.factor(concentration), data = .)
+```
+
+### All slopes
+
+```{r}
+slopes(fig5a_lm,
+       variables = "day",
+       by = "concentration") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### 25 nM vs DMSO
+
+```{r}
+slopes(fig5a_lm,
+       variables = "day",
+       by = "concentration",
+       hypothesis = "b2-b1 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### 100 nM vs DMSO
+
+```{r}
+slopes(fig5a_lm,
+       variables = "day",
+       by = "concentration",
+       hypothesis = "b3-b1 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+
+```
+
+## Figure 5b
+
+```{r}
+fig5b_data <- read_csv("data/fig5/fig5a_data_ris_instability.csv")
+
+(fig5b_g <- fig5b_data |> 
+ plot_average_repeat_gain()
+)
+
+```
+
+```{r}
+fig5b_lm <- fig5b_data %>%
+  lm(average_repeat_gain ~ 0 + day:as.factor(concentration), data = .)
+```
+
+### All slopes
+
+```{r}
+slopes(fig5b_lm,
+       variables = "day",
+       by = "concentration") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### 100 nM vs DMSO
+
+```{r}
+slopes(fig5b_lm,
+       variables = "day",
+       by = "concentration",
+       hypothesis = "b2-b1 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+```
+
+### 500 nM vs DMSO
+
+```{r}
+slopes(fig5b_lm,
+       variables = "day",
+       by = "concentration",
+       hypothesis = "b3-b1 = 0") |>
+  mutate(across(c("estimate", "conf.low", "conf.high"),
+                function(x) x * 7)) |>
+  knitr::kable()
+
+```
+
+## Figure 5c
+
+```{r}
+fig5c_data <- read_csv("data/fig5/fig5c_data.csv") |>
+  mutate(drug_conc = ifelse(drug_conc == "500 nM Ris", "500 nM Ris.", drug_conc),
+         drug_conc = fct_relevel(drug_conc, "DMSO")) 
+
+(
+fig5c_g <- fig5c_data |>
+  ggplot(aes(drug_conc, Total_Masses)) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina(
+    shape = 21,
+    alpha = 0.2) +
+  scale_y_log10() +
+  annotation_logticks(sides = "l") +
+  theme_minimal() +
+  labs(y = "Log10 Cytotox stained\nobjects per field of view", x = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        legend.position = "none")
+)
+
+```
+
+```{r}
+
+fig5c_data |>
+  lm(Total_Masses ~ drug_conc, data = _) |>
+  summary() 
+
+```
+
+## Figure 5d
+
+```{r}
+fig5d_data <- read_csv("data/fig5/fig5d_data.csv") |>
+  mutate(drug_conc = ifelse(drug_conc == "500 nM Ris", "500 nM Ris.", drug_conc),
+         drug_conc = fct_relevel(drug_conc, "DMSO")) 
+
+
+(fig5d_g <- fig5d_data |>
+  ggplot(aes(drug_conc, Mean)) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina(
+    shape = 21,
+                     alpha = 0.2) +
+  theme_minimal() +
+  labs(y = "Average autofluorescence\npixel intensity",
+       x = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        legend.position = "none")
+)
+```
+
+```{r}
+
+fig5d_data |>
+  lm(Mean ~ drug_conc, data = _) |>
+  summary()
+
+```
+
+```{r}
+fig5_top <- fig5a_g + fig5b_g +
+  plot_annotation(tag_levels = "a")
+
+
+ggsave("outputs/fig5_top.pdf",
+       fig5_top,
+       width = 7.5,
+       height = 2.5)
+
+fig5_bottom <- fig5c_g + fig5d_g  + 
+  plot_annotation(tag_levels = list(c("c", "d")))
+
+ggsave("outputs/fig5_bottom.pdf",
+       fig5_bottom,
+       width = 7.5,
+       height = 2.5)
+
+```
+
+# Figure 6
+
+## Figure 6b
+
+```{r}
+fig6b_data <- read_csv("data/fig6/fig6b_data_pms1_variation.csv")
+
+(fig6b_g <- fig6b_data |>
+  ggplot(aes(position, allele_frequency)) +
+  geom_vline(xintercept = c(190683464, 190683555),
+             lty = 3,
+             colour = "red") +
+  geom_point(alpha = 0.5) +
+  scale_y_log10() +
+  scale_x_continuous(limits = c(190683464 -100,190683555 +100)) +
+  annotation_logticks(outside = FALSE, sides = "l") +
+  theme_minimal() +
+    labs(colour = "Variant\nrepresented\nin cell lines\ntested", y = "MAF", x = "GRCh37 chr2 position"))
+
+
+```
+
+## Figure 6c
+
+```{r}
+fig6c_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv")
+
+(fig6c_g <- fig6c_data %>%
+  ggplot(aes(treatment, peak_prop, colour = drug)) +
+  geom_point(shape = 1) +
+  scale_x_log10() +
+  scale_colour_brewer(palette = "Set2") +
+  # stat_summary(fun = median, geom = "point") +
+  geom_smooth(method = 'loess') +
+  labs(y = "Canonical\nband proportion", x = "Concentration (nM)", colour = "Drug") +
+  theme_minimal()+ 
+  annotation_logticks(sides = "b", outside = TRUE) +
+  coord_cartesian(clip = "off") +
+  theme(axis.text.x = element_text(margin = margin(8))))
+
+```
+
+```{r}
+
+fig6_g <- fig6b_g + fig6c_g + 
+  plot_annotation(tag_levels = list(c("b", "c")))
+
+ggsave("outputs/fig6.pdf",
+       fig6_g,
+       width = 7.5,
+       height = 2)
+
+```
+
+# Figure 7
+
+## Figure 7c
+
+```{r}
+fig7c_data <- read_csv("data/fig7/fig7c_data_ddPCR.csv") |>
+    mutate(treatment = str_replace(treatment, "nM\nBranaplam", "nM Bran."),
+           genotype = gsub("PMS1","<i>PMS1</i>",genotype))
+
+
+fig7c_numbers <- fig7c_data |>
+  group_by(genotype, treatment) |>
+  summarise(N = length(unique(cell_line)),
+            n = n())
+
+
+(fig7c_g <- fig7c_data |>
+  ggplot(aes(fct_rev(treatment), rel_dmso)) +
+  geom_boxplot() +
+  geom_point(aes(colour = cell_line),
+             position = position_dodge(width = 0.5),
+                     size = 2,
+                     alpha = 0.5) +
+  geom_text(data = fig7c_numbers,
+            aes(x = fct_rev(treatment), y = 1.5,
+                label = paste0(N,"\n", n)),
+            size = 2) +
+  geom_text(data = data.frame(label = rep("N=\nn="),
+                              genotype = unique(fig7c_data$genotype)),
+            aes(x = 0.8, y = 1.5, label = label),
+            size = 2) +
+  scale_colour_viridis_d() +
+  scale_y_continuous(limits = c(0,1.6),
+                     breaks = c(0,0.25,0.5,0.75, 1),
+                     minor_breaks = NULL) +
+  facet_wrap(vars(fct_rev(genotype))) +
+  theme_bw() +
+  labs(y = "PMS1 exon 5-6 expression\nrelative to median DMSO", x = "") +
+  theme(strip.background =element_rect(fill="white"),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        strip.text = ggtext::element_markdown()
+        ))
+
+
+```
+
+```{r}
+fig7c_lm <- fig7c_data %>%
+  lm(rel_dmso ~ genotype * treatment, data = .)
+```
+
+Are PMS1 delta PE cells different to WT for non-treated?
+
+```{r}
+comparisons(fig7c_lm,
+            variables = list(genotype = rev(unique(fig7c_data$genotype))),
+            newdata = datagrid(treatment = c("DMSO"))) 
+```
+
+effect of treatment
+
+```{r}
+comparisons(
+  fig7c_lm,
+  variables = list(treatment = unique(fig7c_data$treatment)),
+  newdata = datagrid(genotype = rev(unique(fig7c_data$genotype)))
+  )
+```
+
+is the effect in wt and PMS1 delta PE cells different?
+
+```{r}
+comparisons(
+  fig7c_lm,
+  variables = list(treatment = unique(fig7c_data$treatment)),
+  newdata = datagrid(genotype = rev(unique(fig7c_data$genotype))),
+  hypothesis = "b1 = b2"
+  ) |>
+  as.data.frame() |>
+  knitr::kable()
+
+
+```
+
+## Figure 7d
+
+```{r}
+fig7d_data <- read_csv("data/fig7/fig7d_data_instability1.csv") |>
+  mutate(treatment = str_replace(treatment, "nM\n", "nM "),
+         treatment = fct_relevel(treatment,
+                                 "DMSO"),
+         genotype = gsub("PMS1","<i>PMS1</i>",genotype),
+         genotype = gsub("HTT","<i>HTT</i>",genotype),
+         genotype = fct_relevel(genotype,
+                                "WT")) 
+
+fig7d_numbers <- fig7d_data |>
+  group_by(genotype, treatment) |>
+  summarise(N = length(unique(cell_line)),
+            n = n())
+
+(fig7d_g <- fig7d_data |>
+  ggplot(aes(treatment, normalised_gain)) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina(aes(colour = as.factor(cell_line)),
+                     size = 1.5,
+                     alpha = 0.5) +
+  geom_text(data = fig7d_numbers,
+            aes(x = treatment, y = 1.75,
+                label = paste0(N,"\n", n)),
+            size = 2) +
+  geom_text(data = data.frame(label = rep("N=\nn="),
+                              genotype = unique(fig7d_data$genotype)),
+            aes(x = 0.73, y = 1.75, label = label),
+            size = 2) +
+  scale_colour_viridis_d() +
+  scale_y_continuous(limits = c(0, 1.86)) +
+  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
+  labs(x = "", y = "Repeat gain\nrelative to DMSO", colour = "Genotype clone") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        panel.grid.minor.y = element_blank(),
+        strip.text = ggtext::element_markdown()
+        ))
+
+
+```
+
+```{r}
+fig7d_lm <- fig7d_data %>%
+  lm(normalised_gain ~ cell_line + genotype * treatment, data = .)
+
+
+
+comparisons(fig7d_lm,
+                   variables = list(treatment = "pairwise"),
+                   newdata = datagrid(genotype = unique(fig7d_data$genotype))
+                   ) |>
+  arrange(genotype)
+
+
+
+comparisons(
+  fig7d_lm,
+  variables = list(
+    treatment = "pairwise"),
+  newdata = datagrid(
+    genotype = unique(fig7d_data$genotype))
+) |>
+  arrange(genotype) 
+
+
+```
+
+Is the PMS1 delta PE risdiplam treatment reduced as much as the WT for the same treatment?
+
+```{r}
+comparisons(fig7d_lm,
+            variables = list(treatment = unique(fig7d_data$treatment)[c(1,3)]),
+            newdata = datagrid(genotype = unique(fig7d_data$genotype)[c(1,3)]),
+            hypothesis = "b1 = b2"
+) 
+
+
+
+
+```
+
+## Figure 7e
+
+```{r}
+fig7e_data <- read_csv("data/fig7/fig7e_data_instability2.csv") |>
+  mutate(genotype = gsub("PMS1","<i>PMS1</i>",genotype),
+         genotype = fct_relevel(genotype,
+                                "WT"),
+         treatment = str_replace(treatment, "nM\n", "nM "),
+         treatment = fct_relevel(treatment,
+                                 "DMSO"))
+
+fig7e_numbers <- fig7e_data |>
+  group_by(genotype, treatment) |>
+  summarise(N = length(unique(cell_line)),
+            n = n())
+
+(fig7e_g <- fig7e_data |>
+  ggplot(aes(treatment, normalised_gain)) +
+  geom_boxplot(position = position_dodge(),
+               outlier.shape = NA) +
+  geom_text(data = fig7e_numbers,
+            aes(x = treatment, y = 1.75,
+                label = paste0(N,"\n", n)),
+            size = 2) +
+  geom_text(data = data.frame(label = rep("N=\nn="),
+                              genotype = unique(fig7e_data$genotype)),
+            aes(x = 0.75, y = 1.75, label = label),
+            size = 2) +
+  ggforce::geom_sina(aes(colour = as.factor(cell_line)),
+                     size = 2,
+                     alpha = 0.5) +
+  scale_colour_viridis_d() +
+  scale_y_continuous(limits = c(0, 1.86),
+                     breaks = c(0, 0.5, 1, 1.5)) +
+  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
+  labs(x = "", y = "Repeat gain\nrelative to DMSO", colour = "Genotype clone") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.y = element_text(margin = margin(0,10,0,0)),
+        panel.grid.minor.y = element_blank(),
+        strip.text = ggtext::element_markdown()
+        ))
+
+```
+
+```{r}
+fig7e_lm <- fig7e_data |>
+  lm(normalised_gain ~ cell_line + genotype * treatment, data = _)
+
+
+comparisons(
+  fig7e_lm,
+  variables = list(treatment = "pairwise"),
+  newdata = datagrid(genotype = unique(fig7e_data$genotype))
+) |>
+  arrange(genotype)
+
+
+```
+
+same change with 100 or 200 nM for the different genotypes?
+
+100 nM
+
+```{r}
+comparisons(
+  fig7e_lm,
+  variables = list(treatment = c("DMSO", "100 nM Bran.")),
+  newdata = datagrid(genotype = unique(fig7e_data$genotype)),
+  hypothesis = "b1 = b2"
+) |>
+  as.data.frame() |>
+  knitr::kable()
+```
+
+200 nM
+```{r}
+comparisons(
+  fig7e_lm,
+  variables = list(treatment = c("DMSO", "200 nM Bran.")),
+  newdata = datagrid(genotype = unique(fig7e_data$genotype)),
+  hypothesis = "b1 = b2"
+) |>
+  as.data.frame() |>
+  knitr::kable()
+
+```
+
+```{r}
+fig7_top <- plot_spacer() + fig7c_g + plot_layout(widths = c(0.65,0.35)) 
+fig7_bottom <- fig7d_g + fig7e_g  + plot_layout(widths = c(1.2,1.02)) 
+
+fig7_g <- fig7_top / fig7_bottom + 
+  plot_annotation(tag_levels = list(c("c", "d", "e")))
+
+ggsave("outputs/fig7.pdf",
+       fig7_g,
+       width = 7.5,
+       height = 6)
+
+
+```
+
+# Sup Figure 2
+
+```{r}
+sup_fig2_data <- read_csv("data/sup_fig2/sup_fig2a_data.csv") |>
+    mutate(treatment = fct_relevel(treatment,
+                                 c("DMSO", "100","200")))
+
+(sup_fig2_g <- sup_fig2_data |>
+  ggplot(aes(treatment, peak_prop, colour = snp)) +
+  geom_jitter() +
+  stat_summary(fun = median, geom = "crossbar") +
+  scale_colour_brewer(palette = "Set2") +
+  labs(y = "Canonical\nband proportion", x = "Branaplam (nM)", colour = "variant") +
+  theme_minimal())
+
+ggsave("outputs/sup_fig2.png",
+       sup_fig2_g,
+       height = 2.5,
+       width = 3.5)
+
+
+```
+
+# Sup Figure 3
+
+```{r}
+
+sup_fig3_data <- read_csv("data/sup_fig3/sup_fig3a_data.csv") |>
+       mutate(concentration = as.numeric(concentration)) 
+
+(sup_fig3_g <- sup_fig3_data |>
+  ggplot(aes(concentration, proportion2)) +
+  geom_point(shape = 21) +
+  geom_smooth() +
+  scale_x_log10()+
+  facet_wrap(vars(gene), ncol = 2) +
+  annotation_logticks(sides = "b") +
+  labs(y = "Canonical band proportion", x = "Log10 branaplam (nM)") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_line(),
+        strip.background =element_rect(fill="white"),
+        strip.text = element_text(face = "italic")))
+
+ggsave("outputs/sup_fig3.png",
+       sup_fig3_g,
+       width = 7.5,
+       height = 3.5)
+
+```
+
+# Sup Figure 4
+
+## Sup Figure 4a
+
+```{r}
+sup_fig4_data <- read_csv("data/sup_fig4/sup_fig4_data.csv")
+
+
+(sup_fig4a_g <- sup_fig4_data |>
+  ggplot() +
+  geom_col(aes(target, percent_reads, fill = fct_rev(editing_outcome))) +
+  geom_text(aes(x = target,
+                y = 1.1,
+                label = total_reads),
+            size = 3) +
+  facet_wrap(vars(grna), ncol = 2) +
+  scale_fill_brewer(palette = "Pastel2") +
+  labs(y = "Proportion of reads",
+       fill = "Editing outcome",
+       x = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(face = "italic")))
+
+
+```
+
+## Sup Figure 4b
+
+```{r}
+sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv")
+
+
+(sup_fig4b_g <- sup_fig4b_data |>
+  mutate(gene_geno = fct_relevel(gene_geno,
+                                 "+/+", "MSH3-/-", "PMS1+/-", "PMS1-/-" )) |>
+  ggplot(aes(size, norm_signal, colour = gene_geno)) +
+  geom_line(linewidth = 0.05) +
+  facet_grid(day ~ gene_geno) +
+  scale_color_manual(values = 
+                       c(msh3_col,
+                         msh3_col,
+                         pms1_col,
+                         pms1_col)
+  ) +
+  scale_y_continuous(minor_breaks = NULL) +
+  scale_x_continuous(minor_breaks = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 5),
+        strip.text = element_text(size = 8.4),
+        strip.text.x = element_text(face = "italic")) +
+  labs(x = "Fragment length (bp)", y = "Relative signal intensity", 
+       title = "Clonal edited strains"))
+
+
+```
+
+```{r}
+
+sup_fig4_g <- sup_fig4a_g / sup_fig4b_g +
+  plot_annotation(tag_levels = "a")
+
+ggsave("outputs/sup_fig4.png",
+       sup_fig4_g,
+       width = 7.5,
+       height = 7.5)
+
+```
+
+# Sup Figure 5
+
+## Sup Figure 5a
+
+```{r}
+
+sup_fig5a_data <- read_csv("data/sup_fig5/sup_fig5a_data_cytotox_growth.csv")
+
+sup_fig5a_labels <- sup_fig5a_data |>
+  filter(Elapsed == max(Elapsed)) |>
+  filter(drug_conc %in% c(0, 250,500))
+
+(sup_fig5a_g <- sup_fig5a_data|>
+  ggplot(aes(Elapsed, mean_conf)) +
+  geom_ribbon(aes(ymax = upper,
+                  ymin = lower,
+                  fill = as.factor(drug_conc)),
+              alpha = 0.3)+ 
+  geom_point(aes(colour = as.factor(drug_conc))) +
+  geom_line(aes(colour = as.factor(drug_conc))) +
+  ggrepel::geom_text_repel(data = sup_fig5a_labels,
+                           aes(label = as.factor(drug_conc)),
+                           nudge_x = 7.5,
+                           nudge_y = -1) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  facet_wrap(vars(exp)) +
+  theme_minimal() +
+  labs(y = "Confluency (%)",
+       x = "Time (hours)",
+       colour = "Drug\nconc.",
+       fill = "Drug\nconc.")
+)
+
+
+```
+
+## Sup Figure 5b
+
+```{r}
+
+sup_fig5b_data <- read_csv("data/sup_fig5/sup_fig5b_data_cytotox_death.csv")
+
+sup_fig5b_labels <- sup_fig5b_data |>
+  filter(Elapsed == max(Elapsed)) |>
+  filter(drug_conc %in% c(500, 750, 1000))
+
+(sup_fig5b_g <- sup_fig5b_data|>
+  ggplot(aes(Elapsed, mean_count)) +
+  geom_ribbon(aes(ymax = upper,
+                  ymin = lower,
+                  fill = as.factor(drug_conc)),
+              alpha = 0.3)+ 
+  geom_point(aes(colour = as.factor(drug_conc))) +
+  geom_line(aes(colour = as.factor(drug_conc))) +
+  ggrepel::geom_text_repel(data = sup_fig5b_labels,
+                           aes(label = as.factor(drug_conc)),
+                           nudge_x = 10,
+                           min.segment.length = unit(0, 'lines')) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  facet_wrap(vars(exp)) +
+  theme_minimal() +
+  labs(y = "Dead cell count\nper field of view",
+       x = "Time (hours)",
+       colour = "Drug\nconc.",
+       fill = "Drug\nconc.")
+)
+
+
+```
+
+```{r}
+
+
+sup_fig5 <- sup_fig5a_g / sup_fig5b_g + 
+  plot_layout(guides = 'collect') +
+  plot_annotation(tag_levels = "a")
+
+ggsave("outputs/sup_fig5.png",
+       sup_fig5,
+       height = 7.5,
+       width = 7.5)
+
+
+```
+
+# Sup Figure 11
+
+## Sup Figure 11b
+
+```{r}
+sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") |>
+  mutate(genotype = gsub("HTT","<i>HTT</i>",genotype),
+         genotype = gsub("PMS1","<i>PMS1</i>",genotype))
+
+(sup_fig11b_g <- sup_fig11b_data |>  
+  mutate(treatment = str_replace(treatment, "nM\n", "nM "),
+         treatment = fct_relevel(treatment,
+                                 "DMSO"),
+         genotype = fct_relevel(genotype,
+                                "WT")) |>
+  ggplot(aes(treatment, (weighted_repeat_gain / 32) * 7, 
+             colour = as.factor(cell_line))) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina(size = 2,
+                     alpha = 0.5) +
+  scale_colour_viridis_d() +
+  facet_wrap(vars(genotype), nrow = 1) +
+  labs(x = "Treatment", y = "Average repeat gain\nper week") +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "white"),
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    axis.text.y = element_text(margin = margin(0, 10, 0, 0)),
+    strip.text = ggtext::element_markdown()
+  ))
+
+
+```
+
+## Sup Figure 11b
+
+```{r}
+
+sup_fig11c_data <- read_csv("data/sup_fig11/sup_fig11c_data.csv") 
+
+(sup_fig11c_g <- sup_fig11c_data |>
+  mutate(treatment = str_replace(treatment, "nM\n", "nM "),
+         treatment = fct_relevel(treatment,
+                                 "DMSO"),
+         genotype = fct_relevel(genotype,
+                                "WT")) |>
+  ggplot(aes(treatment, (weighted_repeat_gain /29) * 7, colour = as.factor(cell_line))) +
+  geom_boxplot(position = position_dodge(),
+               outlier.shape = NA) +
+  ggforce::geom_sina(size = 2, alpha = 0.5) +
+  scale_colour_viridis_d() +
+  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
+  labs(x = "Treatment", y = "Average repeat gain\nper week", colour = "Genotype clone") +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "white"),
+    legend.position = "none",
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      vjust = 1
+    ),
+    axis.text.y = element_text(margin = margin(0, 10, 0, 0))
+  )
+)
+
+```
+
+```{r}
+
+
+sup_fig11 <- sup_fig11b_g / sup_fig11c_g + 
+  plot_annotation(tag_levels = list(c("b", "c")))
+
+ggsave("outputs/sup_fig11.png",
+       sup_fig11,
+       height = 5,
+       width = 7.5)
+
+```
