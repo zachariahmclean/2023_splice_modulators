@@ -685,10 +685,6 @@ ggsave("outputs/fig4.pdf",
 ```{r}
 plot_average_repeat_gain = function(df){
   
-  plot_numbers <- df |>
-    group_by(day, concentration) |>
-    summarise(n = n())
-  
   df |>
     ggplot(aes(as.factor(day), average_repeat_gain)) +
     geom_boxplot(aes(colour = as.factor(concentration)),
@@ -698,20 +694,11 @@ plot_average_repeat_gain = function(df){
                  position = position_jitterdodge(),
                shape = 21,
                alpha = 0.5) +
-    geom_text(data = plot_numbers,
-            aes(x = as.factor(day), y = 5, label = n,
-                colour = as.factor(concentration)),
-            size = 2.5,
-            position = position_dodge(width = 0.75)) +
-    geom_text(data = data.frame(label = "n="),
-            aes(x = 0.83, y = 5, label = label),
-            size = 2.5) +
-    facet_wrap(vars(drug)) +
     labs(colour = "Concentration\n(nM)",
          y = "Average repeat gain",
          x = "Day") +
     theme_minimal() +
-    scale_y_continuous(limits = c(-0.5,5.5)) +
+    scale_y_continuous(limits = c(-0.5,4.5)) +
     scale_colour_viridis_d(option = "mako", end = 0.8) +
     # scale_colour_brewer(palette = "Set2", na.value = "gray60") +
     theme(legend.title = element_text(size = 8.5))
