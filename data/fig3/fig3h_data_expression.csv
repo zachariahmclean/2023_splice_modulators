@@ -1,0 +1,19 @@
+sample_code,assay,dox_status,rel_expression
+S-23-344,PPP1R12C exon 1-2 (from transgene chromosome),Non-induced,0.008323343203203217
+S-23-345,PPP1R12C exon 1-2 (from transgene chromosome),Non-induced,0.00940542957340455
+S-23-346,PPP1R12C exon 1-2 (from transgene chromosome),Non-induced,0.009407318632601218
+S-23-347,PPP1R12C exon 1-2 (from transgene chromosome),Induced,0.005665271020128015
+S-23-348,PPP1R12C exon 1-2 (from transgene chromosome),Induced,0.004646860747239477
+S-23-349,PPP1R12C exon 1-2 (from transgene chromosome),Induced,0.005228287964596881
+S-23-344,EGFP,Non-induced,1.219621925943459
+S-23-345,EGFP,Non-induced,1.3232552430755347
+S-23-346,EGFP,Non-induced,1.601352160598589
+S-23-347,EGFP,Induced,11.912943343285496
+S-23-348,EGFP,Induced,11.884840950892634
+S-23-349,EGFP,Induced,10.082753415277685
+S-23-344,PuroR,Non-induced,0.3688967977349914
+S-23-345,PuroR,Non-induced,0.3634997552766362
+S-23-346,PuroR,Non-induced,0.356742694462467
+S-23-347,PuroR,Induced,0.16908641844878639
+S-23-348,PuroR,Induced,0.17857650376418033
+S-23-349,PuroR,Induced,0.18200469653283627

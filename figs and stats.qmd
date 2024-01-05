@@ -1,5 +1,5 @@
 ---
-title: "PMS1 as a target for splice modulation to prevent somatic CAG repeat expansion in Huntington’s disease"
+title: "Splice modulators target PMS1 to reduce somatic expansion of the Huntington’s disease-associated CAG repeat"
 format: 
   html:
     code-fold: true
@@ -28,8 +28,69 @@ library(marginaleffects)
 library(ggforce)
 library(patchwork)
 library(ggtext)
+library(ggridges)
 
 ```
+
+Custom functions
+
+```{r}
+
+me_fold_calculator <- function(me_predictions, 
+                               fold_var_name, 
+                               fold_var_group_denom,
+                               split_var_name = NULL, 
+                               rev = FALSE){
+  
+  me_predictions_df <- as.data.frame(me_predictions)
+  
+  # split dataframe into list
+  
+  if(is.null(split_var_name)) {
+    df_list <- list(me_predictions_df)
+    } 
+  else{
+    df_list <- split(me_predictions_df, me_predictions_df[,split_var_name])
+  }
+  
+  # calculate fold change and CIs for each entry
+  
+  for (i in seq_along(df_list)) {
+    
+    if(!is.null(split_var_name)){
+      print(names(df_list[i]))
+    }
+    
+    df <- df_list[[i]]
+    fold_var_position <- which(df[, fold_var_name] == fold_var_group_denom)
+    
+
+    df_conf <- data.frame(
+      comparison = paste0(df[, fold_var_name], " - ", rep(fold_var_group_denom, length(df[, fold_var_name]))),
+      fold = sapply(df[,"estimate"], function(x) x / df[fold_var_position ,"estimate"]),
+      conf.low = sapply(df[,"conf.high"], function(x) x / df[fold_var_position,"estimate"]), 
+      conf.high = sapply(df[,"conf.low"], function(x) x / df[fold_var_position,"estimate"])
+    ) |>
+      filter(comparison != paste0(fold_var_group_denom, " - ", fold_var_group_denom))
+    
+    # reverse direction of fold change for foldchange reductions    
+    
+    if(rev) {
+      df_conf <- df_conf |>
+        mutate(across(2:4, function(x) -1*(1/x)))
+    }
+    
+    print(df_conf)
+  }
+  
+
+}
+
+
+
+```
+
+
 
 # Figure 1
 
@@ -231,6 +292,8 @@ fig2b_data %>%
 ```{r}
 fig2c_data <- read_csv("data/fig2/fig2c_ddPCR_data.csv")
 
+
+
 fig2c_numbers <- fig2c_data |> 
   group_by(treatment, rsid) |>
   summarise(n = n(),
@@ -255,9 +318,10 @@ fig2c_numbers <- fig2c_data |>
                 breaks = c(0.1,1)) +
   annotation_logticks(sides = "l", outside = TRUE) +
   coord_cartesian(clip = "off") + # Ticks outside plot
-  labs(y = "Log10 HTT ex49-ex50\nexpression relative to DMSO") +
+  labs(y = "Log10 <i>HTT</i> ex49-ex50<br>expression relative to DMSO") +
   theme_bw() +
   theme(legend.position="none",
+        axis.title.y = ggtext::element_markdown(),
         axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
         axis.text.y = element_text(margin = margin(0,10,0,0)),
         axis.title.x = element_blank(),
@@ -285,149 +349,56 @@ ggsave("outputs/fig2.pdf",
 
 # Figure 3
 
-## Figure 3b
-
-```{r}
-
-fig3b_data <- read_csv("data/fig3/fig3b_spliceai_data.csv") |>
-  filter(allele_freq > 0)
-
-
-(fig3b_g <-  fig3b_data |>   
-  ggplot(aes(allele_freq, splice_ai_score)) + 
-  geom_point(aes(colour = exclusive_events),
-             alpha = 0.5) +
-  ggrepel::geom_label_repel(data = fig3b_data |>
-                              filter(allele_freq > 0.01 & splice_ai_score > 0),
-                            aes(label = gene_symbol),
-                            ylim = c(0.5,2),
-                            force = 5,
-                            fill = alpha(c("white"),0.5),
-                            size = 2,
-                            max.overlaps = 20,
-                            fontface="italic") +
-  ggrepel::geom_label_repel(data = fig3b_data |>
-                              filter(allele_freq > 0.01 & splice_ai_score < 0 | gene_symbol == "HTT"| allele_freq > 0.001 & splice_ai_score < 0 & gene_symbol == "ZFP82"),
-                            aes(label = gene_symbol),
-                            ylim = c(-0.5,-2),
-                            force = 5,
-                            fill = alpha(c("white"),0.5),
-                            size = 2,
-                            max.overlaps = 20,
-                            fontface="italic") +
-  scale_colour_brewer(palette = "Set2") +
-  scale_x_log10() +
-  expand_limits(x = 1, y = 1) +
-  annotation_logticks(side = "b", outside = TRUE) +
-  coord_cartesian(clip = "off") +
-  labs(x = "MAF", y = "SpliceAI score") +
-  theme_minimal() +
-  theme(legend.position = "none",
-        axis.text.x = element_text(vjust=-1.5),
-        axis.title.x = element_text(vjust=-1.5))
-
-)
-
-
-
-```
-
 ## Figure 3c
 
 ```{r}
-fig3c_data <- read_csv("data/fig3/fig3c_validation.csv") |>
-  mutate(gene = str_replace(gene, "\n", " ")) |>
-  mutate(gene = gsub("TENT2","<i>TENT2</i>",gene),
-         gene = gsub("ZFP82","<i>ZFP82</i>",gene))
 
+fig3c_data <- read_csv("data/fig3/fig3c_data_edu.csv")
+(
 
-fig3c_data_n <- fig3c_data |>
-  group_by(gene, snps, drug_treatment) |>
-  summarise(N = length(unique(cell_line_unique_number)),
-            n = n()) |>
-  ungroup()
-
-
-
-(fig3c_g <- fig3c_data |>
-  ggplot(aes(x=as.factor(snps), y= peak_prop))+
-  stat_summary(fun = median, geom = "crossbar", linewidth = 0.2)+
-  ggforce::geom_sina(shape = 21) +
-  geom_text(data = fig3c_data_n,
-        aes(y = 1.2, label = paste0(N,"\n",n)),
-        position = position_dodge(width = 1),
-        size = 2.5) +
-  geom_text(data = data.frame(drug_treatment = c("50 nM", "100 nM", "100 nM"),
-                              gene = c(unique(fig3c_data$gene)[1],
-                                       unique(fig3c_data$gene)),
-                              label = rep("N= \nn=",3)),
-            aes(x = c(0.8, 0.85,0.85), y = 1.2, label = label),
-            size = 2.5) +
-  scale_y_continuous(limits = c(0,1.35)) +
-  facet_wrap(vars(gene,fct_rev(drug_treatment)))+
-  labs(y = "Canonical band\nproportion", 
-       x = "Genotype", 
-       colour = "Branaplam\nconc.") +
-  theme_bw() +
-  theme(strip.background =element_rect(fill="white"),
-        strip.text = ggtext::element_markdown()) 
+fig3c_g <- fig3c_data |>
+  ggplot(aes(as.factor(days_conf), positive_cell_count / total_cell_count)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(alpha = 0.1,
+              size = 0.5) +
+  theme_minimal() +
+  labs(y = "Edu positive / total nuclei",
+       x = "Days confluent")
 )
 
 
 ```
 
-```{r}
 
-fig3c_data %>%
-  split(paste(.$gene, .$drug_treatment)) %>%
-  lapply(function(x) {
-    x |>
-      group_by(cell_line_unique_number, snps, drug_treatment) |>
-      summarise(peak_prop = mean(peak_prop)) |>
-      lm(peak_prop ~ snps, data = _) |>
-      summary()
-    
-    })
-
-```
+## Figure 3d
 
 ```{r}
+fig3d_data <- read_csv("data/fig3/fig3d_data_traces.csv") |>
+  mutate(
+    facet_label = case_when(days == 0 ~ "Day 0",
+                               dox == "Non-induced" ~ "Day 28 Non-induced",
+                               dox == "Induced" ~ "Day 28 Induced"),
+    facet_label = factor(facet_label,
+                               levels = c(unique(facet_label)[1],
+                                          unique(facet_label)[3],
+                                          unique(facet_label)[2]))
+   ) |>
+  filter(strain == 23)
 
-fig3_top <- plot_spacer() + fig3b_g + plot_layout(widths = c(0.3, 0.7))
-fig3_bottom <- plot_spacer() + fig3c_g  + plot_spacer() + 
-  plot_layout(widths = c(0.33, 0.65, 0.07))
-
-fig3 <- fig3_top / fig3_bottom + 
-  plot_layout(heights = c(1.5, 1)) + 
-  plot_annotation(tag_levels = list(c("b", "c")))
-
-ggsave("outputs/fig3.pdf",
-       fig3,
-       height = 5,
-       width = 7.5)
-
-
-```
-
-# Figure 4
-
-## Figure 4a
-
-```{r}
-fig4a_data <- read_csv("data/fig4/fig4a_data_traces.csv")
-
-(fig4a_g <-  fig4a_data |>
-  ggplot(aes(repeats, rel_height, fill = as.factor(days))) +
-  geom_col(position = position_dodge()) +
-  facet_wrap(vars(fct_rev(dox)), ncol = 1) +
-  scale_fill_manual(values = c("gray75", "gray30")) +
+(fig3d_g <-  fig3d_data |>
+  ggplot(aes(repeats, rel_signal, colour = dox)) +
+  geom_line() + 
+  geom_vline(aes(xintercept = modal_repeat),
+             lty = 3) +
+  facet_wrap(vars(facet_label), ncol = 1) +
   labs(x = "CAG repeat",
-       y = "Fragment proportion",
+       y = "",
        fill = "Day") +
   theme_minimal() +
   theme(axis.text.y = element_blank(),
         panel.grid.major.y  = element_blank(),
-        panel.grid.minor.y  = element_blank())
+        panel.grid.minor.y  = element_blank(),
+        legend.position = "none")
 )
 
 
@@ -435,50 +406,281 @@ fig4a_data <- read_csv("data/fig4/fig4a_data_traces.csv")
 
 ```
 
-## Figure 4b
+## Figure 4e
 
 ```{r}
 
-fig4b_data <- read_csv("data/fig4/fig4b_data.csv")
+fig3e_data <- read_csv("data/fig3/fig3e_data_traces.csv") |>
+  mutate(
+    facet_label = case_when(division == "D0" ~ "Day 0",
+                            division == "Non-dividing" ~ "Day 48 Non-dividing",
+                            division == "Dividing" ~ "Day 48 Dividing"),
+   facet_label = factor(facet_label,
+                        levels = c(unique(facet_label)[1],
+                                   unique(facet_label)[3],
+                                   unique(facet_label)[2]))
+  )
 
-fig4b_numbers <- fig4b_data |>
-  group_by(dox) |>
-  summarise(N = n())
-
-(fig4b_g <- fig4b_data |>
-  ggplot(aes(fct_rev(dox), gain_per_week)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_text(data = fig4b_numbers,
-        aes(y = 1.6, label = paste0(N)),
-        size = 2.5) +
-  geom_text(data = data.frame(label = "N="),
-            aes(x = c(0.89), y = 1.6, label = label),
-            size = 2.5) +
-  ggforce::geom_sina(aes(colour = as.factor(strain)),
-                     maxwidth = 0.5) +
-  scale_colour_viridis_d(option = "viridis") +
-  labs(y = "Average repeat gain\nper week",
-       colour = "Tet-On transcription") +
+(fig3e_g <-  fig3e_data |>
+  ggplot(aes(repeats, rel_signal, colour = dox)) +
+  geom_line() + 
+  geom_vline(aes(xintercept = modal_repeat),
+             lty = 3) +
+  facet_wrap(vars(facet_label), ncol = 1) +
+  labs(x = "CAG repeat",
+       y = "",
+       fill = "Day") +
   theme_minimal() +
-  theme(legend.position = "none",
-        axis.title.x = element_blank())
+  theme(axis.text.y = element_blank(),
+        panel.grid.major.y  = element_blank(),
+        panel.grid.minor.y  = element_blank(),
+        legend.position = "none")
 )
 
 
 
+```
+
+
+## Figure 3f
+
+```{r}
+fig3f_data <- read_csv("data/fig3/fig3f_data_division_gain.csv") |>
+  mutate(day = as.factor(day))
+
+fig3f_numbers <- fig3f_data |>
+  count(day, division, dox)
+
+(
+fig3f_g <- fig3f_data |>
+  ggplot(aes(day, average_repeat_gain)) +
+  geom_boxplot(aes(colour = dox),
+               outlier.shape = NA) +
+  ggforce::geom_sina(aes(colour = dox),
+                     alpha = 0.5) +
+  geom_text(data = fig3f_numbers,
+      aes(x = day, y = 18.5, label = n, colour = dox),
+      size = 2.5,
+      position = position_dodge(width = 0.75)) +
+  geom_text(data = data.frame(label = "n=", division = "Non-dividing"),
+            aes(x = c(0.8), y = 18.5, label = label),
+            size = 2.5) +
+  facet_wrap(vars(fct_rev(division))) +
+  theme_minimal() +
+  labs(y = "Average repeat gain",
+       x = "Day", 
+       colour = "")
+
+)
+```
+
+
+```{r}
+fig3f_mod <- fig3f_data |>
+  mutate(day = as.numeric(as.character(day))) |>
+  lm(average_repeat_gain ~ 0 + day:division + day:dox , data = _)
+
+
+fig3f_mod |>
+  avg_comparisons()
 
 ```
 
-```{r}
 
-lm(gain_per_week ~ fct_rev(dox), data = fig4b_data) |>
-  summary()
+What is the gain total?
+
+```{r}
+fig3f_mod |>
+  predictions(newdata = datagrid(
+    day = 48,
+    division = unique(fig3f_data$division),
+    dox = unique(fig3f_data$dox)
+    )) |>
+  select(division, dox, estimate, conf.low, conf.high) |>
+  as.data.frame()
+
+
 ```
 
-## Figure 4c
+effect of division?
 
 ```{r}
-fig4c_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
+
+fig3f_mod |>
+  avg_predictions(by = "division") |>
+  me_fold_calculator(fold_var_name = "division",
+                     fold_var_group_denom = "Non-dividing")
+```
+
+
+## Figure 3g
+
+```{r}
+fig3g_data <- read_csv("data/fig3/fig3g_data_flow.csv")
+
+(
+
+fig3g_g <- fig3g_data |>
+  ggplot(aes(x = GFP.A + 0.01,
+             y = name,
+             fill = fct_rev(dox))
+         ) +
+  geom_density_ridges() +
+  scale_x_log10(labels = scales::label_log(),
+                limits = c(3*10^0, 3*10^4)) +
+  labs(x = "GFP signal",
+       y = "") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+)
+
+```
+
+
+
+
+```{r}
+
+
+fig3g_mod <- lm(GFP.A~name, data = fig3g_data)
+
+
+
+avg_predictions(fig3g_mod,
+                by = "name") |>
+  me_fold_calculator("name", "RPE1\nnon-induced")
+
+avg_predictions(fig3g_mod,
+                by = "name") |>
+  me_fold_calculator("name", "RPE1-AAVS1-CAG115\nnon-induced")
+
+
+
+
+```
+
+
+
+
+
+
+## Figure 3h
+
+```{r}
+
+fig3h_data <- read_csv("data/fig3/fig3h_data_expression.csv") |>
+  mutate(assay = ifelse(assay == "PPP1R12C exon 1-2 (from transgene chromosome)",
+                        "PPP1R12C ex. 1-2 (from transgene chr.)", assay),
+         assay = fct_relevel(assay, "EGFP", after = 2),
+         assay = gsub("PPP1R12C","<i>PPP1R12C</i>",assay),
+         assay = gsub("EGFP","<i>EGFP</i>",assay),
+         assay = gsub("PuroR","<i>PuroR</i>",assay))
+
+(
+fig3h_g <- fig3h_data |>
+  ggplot(aes( rel_expression, dox_status, colour = dox_status)) +
+  stat_summary(fun = "median", size = 0.5, geom = "crossbar", position = position_dodge()) +
+  ggforce::geom_sina() +
+  facet_wrap(vars(assay), ncol = 1) +
+  scale_x_log10(labels = scales::label_log()) +
+  annotation_logticks(sides = "b") +
+  labs(y = "",
+       x = "Relative expression") +
+  theme_bw() +
+  theme(legend.position = "none",
+        strip.background =element_rect(fill="white"),
+        strip.text = ggtext::element_markdown(size = 8))
+)
+```
+
+
+```{r}
+
+fig3h_assays <- unique(fig3h_data$assay)
+
+for (i in seq_along(fig3h_assays)) {
+  
+  print(paste0(fig3h_assays[i], "----------------------------------"))
+  
+  fig3h_mod <- fig3h_data |>
+    filter(assay == fig3h_assays[i]) |>
+    mutate(dox_status = fct_rev(dox_status)) |>
+    lm(rel_expression ~ dox_status, data = _)
+
+
+  fig3h_mod |>
+    avg_comparisons() |>
+    print()
+
+  fig3h_mod |>
+    avg_predictions(by = "dox_status") |>
+    me_fold_calculator(fold_var_name = "dox_status",
+                       fold_var_group_denom = "Non-induced",
+                       rev = ifelse(fig3h_assays[i] == "<i>EGFP</i>", FALSE, TRUE))|>
+    print()
+  
+}
+
+
+
+
+```
+
+
+```{r}
+
+fig3h_mod <- fig3h_data |>
+  mutate(dox_status = fct_rev(dox_status)) |>
+  lm(rel_expression ~ assay * dox_status, data = _)
+
+
+fig3h_mod |>
+  predictions(by = c("assay", "dox_status")) |>
+  filter(dox_status == "Non-induced",
+         assay %in% c("<i>EGFP</i>", "<i>PuroR</i>")) |>
+  me_fold_calculator(fold_var_name = "assay",
+                     fold_var_group_denom = "<i>PuroR</i>")
+```
+
+
+
+
+## Figure 3 combined plots
+```{r}
+
+fig3_top <- plot_spacer() + fig3c_g  + fig3d_g +
+  plot_annotation(tag_levels = list(c("c","d")))
+fig3_middle <- fig3e_g + fig3f_g  +
+  plot_annotation(tag_levels = list(c("e","f")))
+fig3_bottom <- fig3g_g + fig3h_g +
+  plot_annotation(tag_levels = list(c("g", "h")))
+
+
+ggsave("outputs/fig3_top.pdf",
+       fig3_top,
+       height = 2.5,
+       width = 7.5)
+
+ggsave("outputs/fig3_middle.pdf",
+       fig3_middle,
+       height = 2.5,
+       width = 7.5)
+
+ggsave("outputs/fig3_bottom.pdf",
+       fig3_bottom,
+       height = 2.5*1.5,
+       width = 7.5)
+```
+
+
+
+
+# Figure 4
+## Figure 4a
+
+```{r}
+fig4a_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
   mutate(ko = gsub("FAN1","<i>FAN1</i>",ko),
          ko = gsub("MSH3","<i>MSH3</i>",ko),
          ko = gsub("PMS1","<i>PMS1</i>",ko),
@@ -486,10 +688,10 @@ fig4c_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
                           "Empty vector"))
 
 
-(fig4c_g <- fig4c_data |>
-  ggplot(aes(size, rel_signal, colour = ko)) +
+(fig4a_g <- fig4a_data |>
+  ggplot(aes(repeats, rel_signal, colour = ko)) +
   geom_line(linewidth = 0.05) +
-  geom_vline(aes(xintercept = modal_size ),
+  geom_vline(aes(xintercept = modal_repeat ),
              lty = 3,
              linewidth = 0.75,
              colour = "black") +
@@ -502,26 +704,26 @@ fig4c_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
         axis.text.y = element_blank(),
         axis.text.x = element_text(size = 5),
         strip.text = ggtext::element_markdown(size = 8.5)) +
-  labs(x = "Fragment length (bp)", y = "Relative signal intensity", title = "Pooled edited populations"))
+  labs(x = "CAG repeat length", y = "Relative signal intensity", title = "Pooled edited populations"))
 
 
 ```
 
-## Figure 4d
+## Figure 4b
 
 ```{r}
-fig4d_data <- read_csv("data/fig4/fig4d_ko_repeat_gain.csv") |>
+fig4b_data <- read_csv("data/fig4/fig4d_ko_repeat_gain.csv") |>
   mutate(ko = gsub("FAN1","<i>FAN1</i>",ko),
          ko = gsub("MSH3","<i>MSH3</i>",ko),
          ko = gsub("PMS1","<i>PMS1</i>",ko),
          ko = fct_relevel(ko,
                           "Empty vector"))
 
-fig4d_numbers <- fig4d_data |>
+fig4b_numbers <- fig4b_data |>
   group_by(ko, culture_day) |>
   summarise(n = n())
 
-(fig4d_g <- fig4d_data |>
+(fig4b_g <- fig4b_data |>
   ggplot(aes(as.factor(culture_day), average_repeat_gain)) +
   geom_boxplot(aes(colour = ko),
                outlier.shape = NA,
@@ -529,10 +731,10 @@ fig4d_numbers <- fig4d_data |>
   ggforce::geom_sina(aes(colour = ko),
                      alpha = 0.7,
                      shape = 21) +
-  geom_text(data = fig4d_numbers,
+  geom_text(data = fig4b_numbers,
         aes(y = 20, label = paste0(n)),
         size = 2.5) +
-  geom_text(data = data.frame(ko = unique(fig4d_data$ko)[4],
+  geom_text(data = data.frame(ko = unique(fig4b_data$ko)[4],
                               label = "n="),
             aes(x = 0.7, y = 20, label = label),
             size = 2.5) +
@@ -548,14 +750,14 @@ fig4d_numbers <- fig4d_data |>
 ```
 
 ```{r}
-fig4d_lm <- fig4d_data %>%
+fig4b_lm <- fig4b_data %>%
   lm(average_repeat_gain ~ 0 + culture_day:as.factor(ko), data = .)
 ```
 
 ### average repeat gain per week
 
 ```{r}
-slopes(fig4d_lm,
+slopes(fig4b_lm,
        variables = "culture_day",
        by = "ko") |>
   mutate(across(c("estimate", "conf.low", "conf.high"),
@@ -568,7 +770,7 @@ slopes(fig4d_lm,
 ### FAN1-KO vs Empty vector
 
 ```{r}
-slopes(fig4d_lm,
+slopes(fig4b_lm,
        variables = "culture_day",
        by = "ko",
        hypothesis = "b1-b4 = 0") |>
@@ -580,7 +782,7 @@ slopes(fig4d_lm,
 ### PMS1-KO vs Empty vector
 
 ```{r}
-slopes(fig4d_lm,
+slopes(fig4b_lm,
        variables = "culture_day",
        by = "ko",
        hypothesis = "b2-b4 = 0") |>
@@ -592,7 +794,7 @@ slopes(fig4d_lm,
 ### MSH3-KO vs Empty vector
 
 ```{r}
-slopes(fig4d_lm,
+slopes(fig4b_lm,
        variables = "culture_day",
        by = "ko",
        hypothesis = "b2-b4 = 0") |>
@@ -605,14 +807,14 @@ slopes(fig4d_lm,
 
 ```{r}
 
-fig4e_data <- read_csv("data/fig4/fig4e_data_KO_strains.csv") |>
+fig4c_data <- read_csv("data/fig4/fig4e_data_KO_strains.csv") |>
   filter(!is.na(weighted_repeat_gain)) |>
   mutate(gene_geno = gsub("MSH3","<i>MSH3</i>",gene_geno),
          gene_geno = gsub("PMS1","<i>PMS1</i>",gene_geno),
          gene_geno = fct_relevel(gene_geno,
                           "+/+"))
 
-fig4e_numbers <- fig4e_data |>
+fig4c_numbers <- fig4c_data |>
   group_by(day,gene_geno) |>
   summarise(N = length(unique(cell_strain)),
             n = n()) 
@@ -620,17 +822,17 @@ fig4e_numbers <- fig4e_data |>
 msh3_col <- scales::viridis_pal(option = "inferno", end = 0.8 )(4)[3]
 pms1_col <- scales::viridis_pal(option = "inferno", end = 0.8 )(4)[4]
 
-(fig4e_g <- fig4e_data |>
+(fig4c_g <- fig4c_data |>
   ggplot(aes(as.factor(day),weighted_repeat_gain, colour = gene_geno)) +
   geom_boxplot(outlier.shape = NA,
                size = 0.25) +
   ggforce::geom_sina(shape = 21,
                      alpha = 0.5) +
-  geom_text(data = fig4e_numbers,
+  geom_text(data = fig4c_numbers,
             aes(x = as.factor(day), y = 12, label = paste0(N, "\n", n)),
             colour = "black",
             size = 2.5) +
-  geom_text(data = data.frame(gene_geno = unique(fig4e_data$gene_geno)[2],
+  geom_text(data = data.frame(gene_geno = unique(fig4c_data$gene_geno)[2],
                               label = "N=\nn="),
             aes(x = 0.65, y = 12, label = label),
             size = 2.5,
@@ -653,7 +855,7 @@ pms1_col <- scales::viridis_pal(option = "inferno", end = 0.8 )(4)[4]
 ```{r}
 
 
-fig4e_data |>
+fig4c_data |>
   filter(day != 0) |>
   lm(weighted_repeat_gain ~ day * gene_geno, data = _) |>
   avg_comparisons(variables = list(gene_geno = "pairwise"))  |>
@@ -663,19 +865,17 @@ fig4e_data |>
 
 ```{r}
 
-fig4_top_row <- fig4a_g + fig4b_g + plot_layout(widths = c(0.6,0.4)) 
-fig4_middle_row <- fig4c_g
-fig4_bottom_row <- fig4d_g + fig4e_g + plot_layout(widths = c(0.6,0.4)) 
+fig4_top_row <- fig4a_g
+fig4_bottom_row <- fig4b_g + fig4c_g + plot_layout(widths = c(0.6,0.4)) 
 
-fig4 <- fig4_top_row / fig4_middle_row / fig4_bottom_row + 
-  plot_layout(heights = c(1,1, 1))  +
+fig4 <- fig4_top_row/ fig4_bottom_row + 
   plot_annotation(tag_levels = "a")
 
 
 ggsave("outputs/fig4.pdf",
        fig4,
        width = 7.5,
-       height = 7.5)
+       height = 5)
 ```
 
 # Figure 5
@@ -896,29 +1096,9 @@ ggsave("outputs/fig5_bottom.pdf",
 ## Figure 6b
 
 ```{r}
-fig6b_data <- read_csv("data/fig6/fig6b_data_pms1_variation.csv")
+fig6b_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv")
 
-(fig6b_g <- fig6b_data |>
-  ggplot(aes(position, allele_frequency)) +
-  geom_vline(xintercept = c(190683464, 190683555),
-             lty = 3,
-             colour = "red") +
-  geom_point(alpha = 0.5) +
-  scale_y_log10() +
-  scale_x_continuous(limits = c(190683464 -100,190683555 +100)) +
-  annotation_logticks(outside = FALSE, sides = "l") +
-  theme_minimal() +
-    labs(colour = "Variant\nrepresented\nin cell lines\ntested", y = "MAF", x = "GRCh37 chr2 position"))
-
-
-```
-
-## Figure 6c
-
-```{r}
-fig6c_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv")
-
-(fig6c_g <- fig6c_data %>%
+(fig6b_g <- fig6b_data %>%
   ggplot(aes(treatment, peak_prop, colour = drug)) +
   geom_point(shape = 1) +
   scale_x_log10() +
@@ -935,12 +1115,12 @@ fig6c_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv")
 
 ```{r}
 
-fig6_g <- fig6b_g + fig6c_g + 
-  plot_annotation(tag_levels = list(c("b", "c")))
+fig6_g <- fig6b_g + 
+  plot_annotation(tag_levels = list(c("b")))
 
 ggsave("outputs/fig6.pdf",
        fig6_g,
-       width = 7.5,
+       width = 3.75,
        height = 2)
 
 ```
@@ -952,7 +1132,9 @@ ggsave("outputs/fig6.pdf",
 ```{r}
 fig7c_data <- read_csv("data/fig7/fig7c_data_ddPCR.csv") |>
     mutate(treatment = str_replace(treatment, "nM\nBranaplam", "nM Bran."),
-           genotype = gsub("PMS1","<i>PMS1</i>",genotype))
+           genotype = gsub("PMS1","<i>PMS1</i>",genotype),
+           genotype = gsub("delta", "&Delta;", genotype)) |>
+    filter(target == "PMS1") 
 
 
 fig7c_numbers <- fig7c_data |>
@@ -993,20 +1175,33 @@ fig7c_numbers <- fig7c_data |>
 
 ```
 
-```{r}
-fig7c_lm <- fig7c_data %>%
-  lm(rel_dmso ~ genotype * treatment, data = .)
-```
 
 Are PMS1 delta PE cells different to WT for non-treated?
 
 ```{r}
-comparisons(fig7c_lm,
-            variables = list(genotype = rev(unique(fig7c_data$genotype))),
-            newdata = datagrid(treatment = c("DMSO"))) 
+fig7c_lm_ratio <-  lm(ratio ~ genotype * treatment, data = fig7c_data)
+
 ```
 
+
+```{r}
+
+comparisons(fig7c_lm_ratio,
+            variables = list(genotype = rev(unique(fig7c_data$genotype))),
+            newdata = datagrid(treatment = c("DMSO"))) 
+
+
+```
+
+
 effect of treatment
+
+```{r}
+fig7c_lm <-  lm(rel_dmso ~ genotype * treatment, data = fig7c_data)
+```
+
+
+
 
 ```{r}
 comparisons(
@@ -1014,6 +1209,17 @@ comparisons(
   variables = list(treatment = unique(fig7c_data$treatment)),
   newdata = datagrid(genotype = rev(unique(fig7c_data$genotype)))
   )
+
+predictions(
+  fig7c_lm,
+  variables = list(treatment = unique(fig7c_data$treatment)),
+  newdata = datagrid(genotype = rev(unique(fig7c_data$genotype)))
+  ) |>
+  me_fold_calculator(fold_var_name = "treatment", 
+                     fold_var_group_denom = "DMSO",
+                     split_var_name = "genotype",
+                     rev = TRUE)
+
 ```
 
 is the effect in wt and PMS1 delta PE cells different?
@@ -1040,6 +1246,8 @@ fig7d_data <- read_csv("data/fig7/fig7d_data_instability1.csv") |>
                                  "DMSO"),
          genotype = gsub("PMS1","<i>PMS1</i>",genotype),
          genotype = gsub("HTT","<i>HTT</i>",genotype),
+         genotype = gsub("delta", "&Delta;", genotype),
+         genotype = gsub("\n", " ", genotype),
          genotype = fct_relevel(genotype,
                                 "WT")) 
 
@@ -1049,13 +1257,15 @@ fig7d_numbers <- fig7d_data |>
             n = n())
 
 (fig7d_g <- fig7d_data |>
-  ggplot(aes(treatment, normalised_gain)) +
+  ggplot(aes(genotype, normalised_gain)) +
+  geom_hline(yintercept = 1,
+             lty = 3) +
   geom_boxplot(outlier.shape = NA) +
   ggforce::geom_sina(aes(colour = as.factor(cell_line)),
                      size = 1.5,
                      alpha = 0.5) +
   geom_text(data = fig7d_numbers,
-            aes(x = treatment, y = 1.75,
+            aes(x = genotype, y = 1.75,
                 label = paste0(N,"\n", n)),
             size = 2) +
   geom_text(data = data.frame(label = rep("N=\nn="),
@@ -1064,15 +1274,15 @@ fig7d_numbers <- fig7d_data |>
             size = 2) +
   scale_colour_viridis_d() +
   scale_y_continuous(limits = c(0, 1.86)) +
-  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
+  facet_wrap(vars(treatment), nrow = 1, scales = "free_x") +
   labs(x = "", y = "Repeat gain\nrelative to DMSO", colour = "Genotype clone") +
   theme_bw() +
   theme(strip.background =element_rect(fill="white"),
         legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
         axis.text.y = element_text(margin = margin(0,10,0,0)),
         panel.grid.minor.y = element_blank(),
-        strip.text = ggtext::element_markdown()
+        axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1, vjust =1),
+        strip.text = element_text(size = 7.4)
         ))
 
 
@@ -1083,7 +1293,6 @@ fig7d_lm <- fig7d_data %>%
   lm(normalised_gain ~ cell_line + genotype * treatment, data = .)
 
 
-
 comparisons(fig7d_lm,
                    variables = list(treatment = "pairwise"),
                    newdata = datagrid(genotype = unique(fig7d_data$genotype))
@@ -1091,15 +1300,17 @@ comparisons(fig7d_lm,
   arrange(genotype)
 
 
+predictions(fig7d_lm,
+            newdata = datagrid(
+              treatment = unique(fig7d_data$treatment),
+              genotype = unique(fig7d_data$genotype)
+            )) |>
+  me_fold_calculator(fold_var_name = "treatment",
+                     fold_var_group_denom = "DMSO",
+                     split_var_name = "genotype",
+                     rev = TRUE)
 
-comparisons(
-  fig7d_lm,
-  variables = list(
-    treatment = "pairwise"),
-  newdata = datagrid(
-    genotype = unique(fig7d_data$genotype))
-) |>
-  arrange(genotype) 
+
 
 
 ```
@@ -1114,8 +1325,6 @@ comparisons(fig7d_lm,
 ) 
 
 
-
-
 ```
 
 ## Figure 7e
@@ -1123,6 +1332,8 @@ comparisons(fig7d_lm,
 ```{r}
 fig7e_data <- read_csv("data/fig7/fig7e_data_instability2.csv") |>
   mutate(genotype = gsub("PMS1","<i>PMS1</i>",genotype),
+         genotype = gsub("delta", "&Delta;", genotype),
+         genotype = gsub("\n", " ", genotype),
          genotype = fct_relevel(genotype,
                                 "WT"),
          treatment = str_replace(treatment, "nM\n", "nM "),
@@ -1135,11 +1346,12 @@ fig7e_numbers <- fig7e_data |>
             n = n())
 
 (fig7e_g <- fig7e_data |>
-  ggplot(aes(treatment, normalised_gain)) +
+  ggplot(aes(genotype, normalised_gain)) +
+  geom_hline(yintercept = 1, lty = 3) +
   geom_boxplot(position = position_dodge(),
                outlier.shape = NA) +
   geom_text(data = fig7e_numbers,
-            aes(x = treatment, y = 1.75,
+            aes(x = genotype, y = 1.75,
                 label = paste0(N,"\n", n)),
             size = 2) +
   geom_text(data = data.frame(label = rep("N=\nn="),
@@ -1152,15 +1364,15 @@ fig7e_numbers <- fig7e_data |>
   scale_colour_viridis_d() +
   scale_y_continuous(limits = c(0, 1.86),
                      breaks = c(0, 0.5, 1, 1.5)) +
-  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
+  facet_wrap(vars(treatment), nrow = 1, scales = "free_x") +
   labs(x = "", y = "Repeat gain\nrelative to DMSO", colour = "Genotype clone") +
   theme_bw() +
   theme(strip.background =element_rect(fill="white"),
         legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1, vjust =1),
+        axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1, vjust =1),
         axis.text.y = element_text(margin = margin(0,10,0,0)),
         panel.grid.minor.y = element_blank(),
-        strip.text = ggtext::element_markdown()
+        strip.text = element_text(size = 7.4)
         ))
 
 ```
@@ -1177,6 +1389,18 @@ comparisons(
 ) |>
   arrange(genotype)
 
+
+
+
+predictions(fig7e_lm,
+            newdata = datagrid(
+              treatment = unique(fig7e_data$treatment),
+              genotype = unique(fig7e_data$genotype)
+            )) |>
+  me_fold_calculator(fold_var_name = "treatment",
+                     fold_var_group_denom = "DMSO",
+                     split_var_name = "genotype",
+                     rev = TRUE)
 
 ```
 
@@ -1210,18 +1434,196 @@ comparisons(
 
 ```{r}
 fig7_top <- plot_spacer() + fig7c_g + plot_layout(widths = c(0.65,0.35)) 
-fig7_bottom <- fig7d_g + fig7e_g  + plot_layout(widths = c(1.2,1.02)) 
+fig7_bottom <- fig7d_g + fig7e_g  + plot_layout(widths = c(0.9,1.0)) 
 
 fig7_g <- fig7_top / fig7_bottom + 
   plot_annotation(tag_levels = list(c("c", "d", "e")))
 
+
 ggsave("outputs/fig7.pdf",
+       device = cairo_pdf,
        fig7_g,
        width = 7.5,
        height = 6)
 
 
 ```
+
+# Figure 8
+
+## Figure 8a
+
+```{r}
+
+fig8a_data <- read_csv("data/fig8/fig8a_data_overlap.csv") |>
+  mutate(
+    across(c("denominator", "numerator"), \(x) str_replace(x, " et","\net")),
+    denominator = fct_rev(denominator))
+
+(
+fig8a_g <- fig8a_data |>
+  ggplot(aes(numerator, denominator, fill = percent, label = n_genes)) +
+  geom_tile() +
+  geom_text(colour = "white",
+            size = 2.5, fontface='bold') +
+  geom_text(data = fig8a_data |> filter(n == n_genes),
+            colour = "black",
+            size = 2.5, fontface='bold') +
+  facet_wrap(vars(drug)) +
+  scale_fill_viridis_c(na.value="white") +
+  labs(y = "",
+       x = "",
+       fill = "Overlap\nproportion") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 6),
+        axis.text.y = element_text(size = 6),
+        ) 
+
+)
+```
+
+
+## Figure 8c
+
+```{r}
+
+fig8c_data <- read_csv("data/fig8/fig8c_spliceai_data.csv") |>
+  filter(allele_freq > 0)
+
+
+(fig8c_g <-  fig8c_data |>   
+  ggplot(aes(allele_freq, splice_ai_score)) + 
+  geom_point(aes(colour = exon_annotation),
+             alpha = 0.5) +
+  ggrepel::geom_label_repel(data = fig8c_data |>
+                              filter(allele_freq > 0.01 & splice_ai_score > 0),
+                            aes(label = gene_symbol),
+                            ylim = c(0.5,2),
+                            force = 5,
+                            fill = alpha(c("white"),0.5),
+                            size = 1.5,
+                            max.overlaps = 20,
+                            fontface="italic") +
+  ggrepel::geom_label_repel(data = fig8c_data |>
+                              filter(allele_freq > 0.01 & splice_ai_score < 0 | gene_symbol == "HTT"| allele_freq > 0.001 & splice_ai_score < 0 & gene_symbol == "ZFP82"),
+                            aes(label = gene_symbol),
+                            ylim = c(-0.5,-2),
+                            force = 5,
+                            fill = alpha(c("white"),0.5),
+                            size = 1.5,
+                            max.overlaps = 20,
+                            fontface="italic") +
+  facet_wrap(vars(drug)) +
+  scale_colour_brewer(palette = "Set2") +
+  scale_x_log10() +
+  expand_limits(x = 1, y = 1) +
+  annotation_logticks(side = "b", outside = TRUE) +
+  coord_cartesian(clip = "off") +
+  labs(x = "MAF", y = "SpliceAI score") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(vjust=-1.5),
+        axis.title.x = element_text(vjust=-1.5))
+
+)
+
+
+
+```
+
+## Figure 8d
+
+```{r}
+fig8d_data <- read_csv("data/fig8/fig8d_validation.csv") |>
+  mutate(gene = str_replace(gene, "\n", " ")) |>
+  mutate(gene = gsub("TENT2","<i>TENT2</i>",gene),
+         gene = gsub("ZFP82","<i>ZFP82</i>",gene))
+
+
+fig8d_data_n <- fig8d_data |>
+  group_by(gene, snps, drug_treatment) |>
+  summarise(N = length(unique(cell_line_unique_number)),
+            n = n()) |>
+  ungroup()
+
+
+
+(fig8d_g <- fig8d_data |>
+  ggplot(aes(x=as.factor(snps), y= peak_prop))+
+  stat_summary(fun = median, geom = "crossbar", linewidth = 0.2)+
+  ggforce::geom_sina(shape = 21) +
+  geom_text(data = fig8d_data_n,
+        aes(y = 1.2, label = paste0(N,"\n",n)),
+        position = position_dodge(width = 1),
+        size = 2.5) +
+  geom_text(data = data.frame(drug_treatment = c("50 nM", "100 nM", "100 nM"),
+                              gene = c(unique(fig8d_data$gene)[1],
+                                       unique(fig8d_data$gene)),
+                              label = rep("N= \nn=",3)),
+            aes(x = c(0.8, 0.85,0.85), y = 1.2, label = label),
+            size = 2.5) +
+  scale_y_continuous(limits = c(0,1.35)) +
+  facet_wrap(vars(gene,fct_rev(drug_treatment)))+
+  labs(y = "Canonical band\nproportion", 
+       x = "Genotype", 
+       colour = "Branaplam\nconc.") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"),
+        strip.text = ggtext::element_markdown()) 
+)
+
+
+```
+
+```{r}
+
+fig8d_data %>%
+  split(paste(.$gene, .$drug_treatment)) %>%
+  lapply(function(x) {
+    x |>
+      group_by(cell_line_unique_number, snps, drug_treatment) |>
+      summarise(peak_prop = mean(peak_prop)) |>
+      lm(peak_prop ~ snps, data = _) |>
+      summary()
+    
+    })
+
+```
+
+
+## Figure 8 plots combined
+
+```{r}
+
+fig8_top <- fig8a_g + plot_spacer() +
+  plot_layout(widths = c(2/3, 1/3))+ 
+  plot_annotation(tag_levels = list(c("a", "b")))
+fig8_middle <- fig8c_g+ 
+  plot_annotation(tag_levels = list(c("c")))
+fig8_bottom <- fig8d_g + plot_spacer() +
+  plot_layout(widths = c(2/3, 1/3))+ 
+  plot_annotation(tag_levels = list(c("d")))
+
+
+ggsave("outputs/fig8_top.pdf",
+       fig8_top,
+       height = 2.5,
+       width = 7.5)
+
+ggsave("outputs/fig8_middle.pdf",
+       fig8_middle,
+       height = 3,
+       width = 7.5)
+
+ggsave("outputs/fig8_bottom.pdf",
+       fig8_bottom,
+       height = 2.5,
+       width = 7.5)
+
+
+
+```
+
 
 # Sup Figure 2
 
@@ -1248,33 +1650,140 @@ ggsave("outputs/sup_fig2.png",
 
 # Sup Figure 3
 
+## Sup Figure 3b
+
+
 ```{r}
 
-sup_fig3_data <- read_csv("data/sup_fig3/sup_fig3a_data.csv") |>
-       mutate(concentration = as.numeric(concentration)) 
+sup_fig3b_data <- read_csv("data/fig3/fig3d_data_traces.csv") |> 
+  mutate(facet_label = case_when(days == 0 ~ "Day 0",
+                                 dox == "Non-induced" ~ "Day 28\nNon-induced",
+                                 dox == "Induced" ~ "Day 28\nInduced"),
+         facet_label = factor(facet_label,
+                              levels = c(unique(facet_label)[1],
+                                         unique(facet_label)[3],
+                                         unique(facet_label)[2])),
+         strain = fct_reorder(paste0("Cell strain #",strain), strain)
+  )
 
-(sup_fig3_g <- sup_fig3_data |>
-  ggplot(aes(concentration, proportion2)) +
-  geom_point(shape = 21) +
-  geom_smooth() +
-  scale_x_log10()+
-  facet_wrap(vars(gene), ncol = 2) +
-  annotation_logticks(sides = "b") +
-  labs(y = "Canonical band proportion", x = "Log10 branaplam (nM)") +
-  theme_bw() +
-  theme(panel.grid.major.x = element_line(),
-        panel.grid.major.y = element_line(),
-        strip.background =element_rect(fill="white"),
-        strip.text = element_text(face = "italic")))
+(sup_fig3b_g <-  sup_fig3b_data |>
+  ggplot(aes(repeats, rel_signal, colour = dox)) +
+  geom_vline(aes(xintercept = modal_repeat),
+             lty = 3, colour = "blue",
+             size = 1) +
+  geom_line() +
+  facet_grid(facet_label ~ strain) +
+  scale_x_continuous(limits = c(NA, NA)) +
+  labs(x = "CAG repeat",
+       y = "",
+       fill = "Day") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid.major.y  = element_blank(),
+        panel.grid.minor.y  = element_blank(),
+        legend.position = "none")
+)
 
-ggsave("outputs/sup_fig3.png",
-       sup_fig3_g,
-       width = 7.5,
-       height = 3.5)
+
 
 ```
 
-# Sup Figure 4
+## Sup Figure 3c
+
+```{r}
+
+sup_fig3c_data <- read_csv("data/sup_fig3/sup_fig3c_data_flow.csv")
+
+
+
+sup_fig3c_numbers <- sup_fig3c_data |>
+  group_by(group) |>
+  summarise(
+    total = n(),
+    total_pos = length(FL46.A[which(FL46.A + 1 >=10)]),
+    total_neg = length(FL46.A[which(FL46.A + 1 < 10)]),
+    prop_pos = total_pos / total,
+    prop_neg = total_neg / total)
+
+  (
+sup_fig3c_g <- sup_fig3c_data |>  
+  ggplot(aes(FL46.A + 1)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 1000) +
+  geom_density(linewidth = 1) +
+  geom_text(data = sup_fig3c_numbers,
+            aes(x = 6*10^0, y = 1.5, label = paste(round(prop_neg, digits = 2)* 100, "%")),
+            size = 3) +
+  geom_text(data = sup_fig3c_numbers,
+            aes(x = 17, y = 1.5, label = paste(round(prop_pos, digits = 2)* 100, "%")),
+            size = 3) +
+  facet_wrap(vars(group), ncol = 1) +
+  geom_vline(xintercept = 10,
+             lty = 3,
+             colour = "blue") +
+  scale_x_log10(label = scales::label_log()) +
+  labs(x = "GFP signal",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank())
+
+
+)
+
+
+```
+
+
+
+## Sup Figure 3d
+
+```{r}
+
+sup_fig3d_data <- read_csv("data/sup_fig3/sup_fig3d_data_metics.csv")
+(
+sup_fig3d_g <- sup_fig3d_data |>
+  ggplot(aes(fct_rev(dox_status), average_repeat_gain, 
+             colour = fct_rev(metrics_grouping))) +
+  geom_boxplot(outlier.shape = NA) +
+  ggforce::geom_sina() +
+  scale_color_brewer(palette = "Set1") +
+  theme_minimal() +
+  labs(x = "", y = "Average repeat gain",
+       colour = "Sorted population") 
+
+)
+```
+
+
+```{r}
+
+sup_fig3_top <- sup_fig3b_g + 
+  plot_annotation(tag_levels = list(c("b")))
+
+ggsave("outputs/sup_fig3_top.pdf",
+       sup_fig3_top,
+       width = 15,
+       height = 6)
+
+sup_fig3_bottom <- sup_fig3c_g + sup_fig3d_g +
+  plot_layout(widths = c(2/3, 1/3)) + 
+  plot_annotation(tag_levels = list(c("c", "d")))
+
+ggsave("outputs/sup_fig3_bottom.pdf",
+       sup_fig3_bottom,
+       width = 7.5,
+       height = 3)
+
+
+```
+
+
+
+
+
+###### change everything below!
 
 ## Sup Figure 4a
 
@@ -1303,14 +1812,18 @@ sup_fig4_data <- read_csv("data/sup_fig4/sup_fig4_data.csv")
 ## Sup Figure 4b
 
 ```{r}
-sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv")
-
-
-(sup_fig4b_g <- sup_fig4b_data |>
+sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv") |>
   mutate(gene_geno = fct_relevel(gene_geno,
                                  "+/+", "MSH3-/-", "PMS1+/-", "PMS1-/-" )) |>
-  ggplot(aes(size, norm_signal, colour = gene_geno)) +
+  group_by(gene_geno) |>
+  mutate(modal_repeat = max(repeats[which(day == 0 & norm_signal == max(norm_signal))]))
+
+
+(sup_fig4b_g <- sup_fig4b_data  |>
+  ggplot(aes(repeats, norm_signal, colour = gene_geno)) +
   geom_line(linewidth = 0.05) +
+  geom_vline(aes(xintercept = modal_repeat),
+             lty = 3) +
   facet_grid(day ~ gene_geno) +
   scale_color_manual(values = 
                        c(msh3_col,
@@ -1326,7 +1839,7 @@ sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv")
         axis.text.x = element_text(size = 5),
         strip.text = element_text(size = 8.4),
         strip.text.x = element_text(face = "italic")) +
-  labs(x = "Fragment length (bp)", y = "Relative signal intensity", 
+  labs(x = "CAG repeat", y = "Relative signal intensity", 
        title = "Clonal edited strains"))
 
 
@@ -1335,12 +1848,13 @@ sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv")
 ```{r}
 
 sup_fig4_g <- sup_fig4a_g / sup_fig4b_g +
+  plot_layout(heights =  c(0.5, 1))+ 
   plot_annotation(tag_levels = "a")
 
-ggsave("outputs/sup_fig4.png",
+ggsave("outputs/sup_fig4.pdf",
        sup_fig4_g,
        width = 7.5,
-       height = 7.5)
+       height = 6)
 
 ```
 
@@ -1433,14 +1947,15 @@ ggsave("outputs/sup_fig5.png",
 
 # Sup Figure 11
 
-## Sup Figure 11b
+## Sup Figure 11a
 
 ```{r}
-sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") |>
+sup_fig11a_data <- read_csv("data/sup_fig11/sup_fig11a_data.csv") |>
   mutate(genotype = gsub("HTT","<i>HTT</i>",genotype),
-         genotype = gsub("PMS1","<i>PMS1</i>",genotype))
+         genotype = gsub("PMS1","<i>PMS1</i>",genotype),
+         genotype = gsub("delta", "&Delta;", genotype))
 
-(sup_fig11b_g <- sup_fig11b_data |>  
+(sup_fig11a_g <- sup_fig11a_data |>  
   mutate(treatment = str_replace(treatment, "nM\n", "nM "),
          treatment = fct_relevel(treatment,
                                  "DMSO"),
@@ -1453,7 +1968,7 @@ sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") |>
                      alpha = 0.5) +
   scale_colour_viridis_d() +
   facet_wrap(vars(genotype), nrow = 1) +
-  labs(x = "Treatment", y = "Average repeat gain\nper week") +
+  labs(x = "", y = "Average repeat gain\nper week") +
   theme_bw() +
   theme(
     strip.background = element_rect(fill = "white"),
@@ -1470,21 +1985,22 @@ sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") |>
 
 ```{r}
 
-sup_fig11c_data <- read_csv("data/sup_fig11/sup_fig11c_data.csv") 
+sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") 
 
-(sup_fig11c_g <- sup_fig11c_data |>
+(sup_fig11b_g <- sup_fig11b_data |>
   mutate(treatment = str_replace(treatment, "nM\n", "nM "),
          treatment = fct_relevel(treatment,
                                  "DMSO"),
          genotype = fct_relevel(genotype,
-                                "WT")) |>
+                                "WT"),
+         genotype = gsub("delta", "&Delta;", genotype)) |>
   ggplot(aes(treatment, (weighted_repeat_gain /29) * 7, colour = as.factor(cell_line))) +
   geom_boxplot(position = position_dodge(),
                outlier.shape = NA) +
   ggforce::geom_sina(size = 2, alpha = 0.5) +
   scale_colour_viridis_d() +
-  facet_wrap(vars(genotype), nrow = 1, scales = "free_x") +
-  labs(x = "Treatment", y = "Average repeat gain\nper week", colour = "Genotype clone") +
+  facet_wrap(vars(fct_rev(genotype)), nrow = 1, scales = "free_x") +
+  labs(x = "", y = "Average repeat gain\nper week", colour = "Genotype clone") +
   theme_bw() +
   theme(
     strip.background = element_rect(fill = "white"),
@@ -1494,7 +2010,8 @@ sup_fig11c_data <- read_csv("data/sup_fig11/sup_fig11c_data.csv")
       hjust = 1,
       vjust = 1
     ),
-    axis.text.y = element_text(margin = margin(0, 10, 0, 0))
+    axis.text.y = element_text(margin = margin(0, 10, 0, 0)),
+    strip.text = ggtext::element_markdown()
   )
 )
 
@@ -1503,12 +2020,41 @@ sup_fig11c_data <- read_csv("data/sup_fig11/sup_fig11c_data.csv")
 ```{r}
 
 
-sup_fig11 <- sup_fig11b_g / sup_fig11c_g + 
-  plot_annotation(tag_levels = list(c("b", "c")))
+sup_fig11 <- sup_fig11a_g / sup_fig11b_g + 
+  plot_annotation(tag_levels = list(c("a", "b")))
 
-ggsave("outputs/sup_fig11.png",
+ggsave("outputs/sup_fig11.svg",
        sup_fig11,
        height = 5,
        width = 7.5)
+
+```
+
+
+# Sup Figure 12
+
+```{r}
+
+sup_fig12_data <- read_csv("data/sup_fig12/sup_fig12_data.csv") |>
+       mutate(concentration = as.numeric(concentration)) 
+
+(sup_fig12_g <- sup_fig12_data |>
+  ggplot(aes(concentration, proportion2)) +
+  geom_point(shape = 21) +
+  geom_smooth() +
+  scale_x_log10()+
+  facet_wrap(vars(gene), ncol = 2) +
+  annotation_logticks(sides = "b") +
+  labs(y = "Canonical band proportion", x = "Log10 branaplam (nM)") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_line(),
+        strip.background =element_rect(fill="white"),
+        strip.text = element_text(face = "italic")))
+
+ggsave("outputs/sup_fig12.svg",
+       sup_fig12_g,
+       width = 7.5,
+       height = 3.5)
 
 ```
