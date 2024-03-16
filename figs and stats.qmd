@@ -63,7 +63,6 @@ me_fold_calculator <- function(me_predictions,
     
     df <- df_list[[i]]
     fold_var_position <- which(df[, fold_var_name] == fold_var_group_denom)
-    
 
     df_conf <- data.frame(
       comparison = paste0(df[, fold_var_name], " - ", rep(fold_var_group_denom, length(df[, fold_var_name]))),
@@ -90,8 +89,6 @@ me_fold_calculator <- function(me_predictions,
 
 ```
 
-
-
 # Figure 1
 
 ## Figure 1c
@@ -102,7 +99,8 @@ fig1c_data <- read_csv("data/fig1/fig1c.csv") |>
   mutate(peak = factor(peak,
                        levels = c("Exon 49-50", "Exon 49-50a-50", "Exon 49-50b")),
          drug = factor(drug, 
-                       labels = c("Branaplam", "Risdiplam")))
+                       labels = c("Branaplam", "Risdiplam"))) |>
+  select(treatment, average_prop, peak, drug)
 
 (fig1c_g <-  fig1c_data %>%
   ggplot(aes(x = as.factor(treatment), y = average_prop, fill = fct_rev(peak))) +
@@ -124,7 +122,8 @@ fig1c_data <- read_csv("data/fig1/fig1c.csv") |>
 fig1d_data <- read_csv("data/fig1/fig1d.csv") |>
   mutate(upstream_ss = factor(upstream_ss,
                               levels = c("G","C","A","T")),
-         treatment = ifelse(str_detect(treatment, "Bran"), "100 nM\nBranaplam", treatment))
+         treatment = ifelse(str_detect(treatment, "Bran"), "100 nM\nBranaplam", treatment)) |>
+  select(upstream_ss, average_prop, peak_name, treatment)
 
 (fig1d_g <- fig1d_data |>
   ggplot(aes(x = upstream_ss, y = average_prop, fill = fct_rev(peak_name))) +
@@ -155,10 +154,10 @@ ggsave("outputs/fig1.pdf",
 
 ## Figure 2a
 
-
 ```{r}
 
-fig2a_data <- read_csv("data/fig2/fig2a_gnomad.csv")
+fig2a_data <- read_csv("data/fig2/fig2a_gnomad.csv") |>
+  select(position, allele_frequency, have_cell_lines, rs_i_ds)
 
 (fig2a_g <-  fig2a_data |>
   ggplot(aes(position, allele_frequency)) +
@@ -197,7 +196,11 @@ fig2a_data <- read_csv("data/fig2/fig2a_gnomad.csv")
 ## Figure 2b
 
 ```{r}
-fig2b_data <- read_csv("data/fig2/fig2b_cell_lines.csv")
+fig2b_data <- read_csv("data/fig2/fig2b_cell_lines.csv") |>
+  select(rs362331_status, rs_i_ds, position, treatment,
+         cell_line_unique_number, can_peak_prop, experiment, ratio_50b_50a)
+
+
 fig2b_rs362331 <- fig2b_data |>
   filter(rs362331_status == "0/1",
          !rs_i_ds %in% c("rs145498084", "rs772437678")) |>
@@ -248,6 +251,7 @@ cell_line_total <- fig2b_plot_data |>
 ```
 
 ### Branaplam stats
+
 ```{r}
 
 fig_2b_lm_bran <- fig2b_data %>%
@@ -260,8 +264,8 @@ avg_comparisons(fig_2b_lm_bran) |>
 
 ```
 
-
 ### Risdiplam stats
+
 ```{r}
 
 
@@ -290,7 +294,8 @@ fig2b_data %>%
 ## Figure 2c
 
 ```{r}
-fig2c_data <- read_csv("data/fig2/fig2c_ddPCR_data.csv")
+fig2c_data <- read_csv("data/fig2/fig2c_ddPCR_data.csv") |>
+  select(treatment, rsid, cell_line,rel_dmso, treatment)
 
 
 
@@ -353,7 +358,9 @@ ggsave("outputs/fig2.pdf",
 
 ```{r}
 
-fig3c_data <- read_csv("data/fig3/fig3c_data_edu.csv")
+fig3c_data <- read_csv("data/fig3/fig3c_data_edu.csv") |>
+  select(days_conf, positive_cell_count, total_cell_count)
+  
 (
 
 fig3c_g <- fig3c_data |>
@@ -369,7 +376,6 @@ fig3c_g <- fig3c_data |>
 
 ```
 
-
 ## Figure 3d
 
 ```{r}
@@ -383,7 +389,8 @@ fig3d_data <- read_csv("data/fig3/fig3d_data_traces.csv") |>
                                           unique(facet_label)[3],
                                           unique(facet_label)[2]))
    ) |>
-  filter(strain == 23)
+  filter(strain == 23) |>
+  select(repeats, rel_signal, dox, modal_repeat, facet_label)
 
 (fig3d_g <-  fig3d_data |>
   ggplot(aes(repeats, rel_signal, colour = dox)) +
@@ -406,7 +413,7 @@ fig3d_data <- read_csv("data/fig3/fig3d_data_traces.csv") |>
 
 ```
 
-## Figure 4e
+## Figure 3e
 
 ```{r}
 
@@ -419,7 +426,8 @@ fig3e_data <- read_csv("data/fig3/fig3e_data_traces.csv") |>
                         levels = c(unique(facet_label)[1],
                                    unique(facet_label)[3],
                                    unique(facet_label)[2]))
-  )
+  ) |>
+  select(repeats, rel_signal, dox, modal_repeat, facet_label)
 
 (fig3e_g <-  fig3e_data |>
   ggplot(aes(repeats, rel_signal, colour = dox)) +
@@ -441,12 +449,12 @@ fig3e_data <- read_csv("data/fig3/fig3e_data_traces.csv") |>
 
 ```
 
-
 ## Figure 3f
 
 ```{r}
 fig3f_data <- read_csv("data/fig3/fig3f_data_division_gain.csv") |>
-  mutate(day = as.factor(day))
+  mutate(day = as.factor(day)) |>
+  select(day, division, dox, average_repeat_gain)
 
 fig3f_numbers <- fig3f_data |>
   count(day, division, dox)
@@ -474,7 +482,6 @@ fig3f_g <- fig3f_data |>
 )
 ```
 
-
 ```{r}
 fig3f_mod <- fig3f_data |>
   mutate(day = as.numeric(as.character(day))) |>
@@ -485,7 +492,6 @@ fig3f_mod |>
   avg_comparisons()
 
 ```
-
 
 What is the gain total?
 
@@ -512,11 +518,11 @@ fig3f_mod |>
                      fold_var_group_denom = "Non-dividing")
 ```
 
-
 ## Figure 3g
 
 ```{r}
-fig3g_data <- read_csv("data/fig3/fig3g_data_flow.csv")
+fig3g_data <- read_csv("data/fig3/fig3g_data_flow.csv") |>
+  select(GFP.A, name, dox)
 
 (
 
@@ -537,9 +543,6 @@ fig3g_g <- fig3g_data |>
 
 ```
 
-
-
-
 ```{r}
 
 
@@ -549,21 +552,16 @@ fig3g_mod <- lm(GFP.A~name, data = fig3g_data)
 
 avg_predictions(fig3g_mod,
                 by = "name") |>
-  me_fold_calculator("name", "RPE1\nnon-induced")
+  me_fold_calculator("name", "RPE1\r\nnon-induced")
 
 avg_predictions(fig3g_mod,
                 by = "name") |>
-  me_fold_calculator("name", "RPE1-AAVS1-CAG115\nnon-induced")
+  me_fold_calculator("name", "RPE1-AAVS1-CAG115\r\nnon-induced")
 
 
 
 
 ```
-
-
-
-
-
 
 ## Figure 3h
 
@@ -575,7 +573,8 @@ fig3h_data <- read_csv("data/fig3/fig3h_data_expression.csv") |>
          assay = fct_relevel(assay, "EGFP", after = 2),
          assay = gsub("PPP1R12C","<i>PPP1R12C</i>",assay),
          assay = gsub("EGFP","<i>EGFP</i>",assay),
-         assay = gsub("PuroR","<i>PuroR</i>",assay))
+         assay = gsub("PuroR","<i>PuroR</i>",assay)) |>
+  select(rel_expression, dox_status, assay)
 
 (
 fig3h_g <- fig3h_data |>
@@ -593,7 +592,6 @@ fig3h_g <- fig3h_data |>
         strip.text = ggtext::element_markdown(size = 8))
 )
 ```
-
 
 ```{r}
 
@@ -627,7 +625,6 @@ for (i in seq_along(fig3h_assays)) {
 
 ```
 
-
 ```{r}
 
 fig3h_mod <- fig3h_data |>
@@ -643,10 +640,8 @@ fig3h_mod |>
                      fold_var_group_denom = "<i>PuroR</i>")
 ```
 
-
-
-
 ## Figure 3 combined plots
+
 ```{r}
 
 fig3_top <- plot_spacer() + fig3c_g  + fig3d_g +
@@ -673,10 +668,8 @@ ggsave("outputs/fig3_bottom.pdf",
        width = 7.5)
 ```
 
-
-
-
 # Figure 4
+
 ## Figure 4a
 
 ```{r}
@@ -685,7 +678,8 @@ fig4a_data <- read_csv("data/fig4/fig4c_traces_data.csv") |>
          ko = gsub("MSH3","<i>MSH3</i>",ko),
          ko = gsub("PMS1","<i>PMS1</i>",ko),
          ko = fct_relevel(ko,
-                          "Empty vector"))
+                          "Empty vector")) |>
+  select(repeats, rel_signal, ko, culture_day, modal_repeat)
 
 
 (fig4a_g <- fig4a_data |>
@@ -717,11 +711,12 @@ fig4b_data <- read_csv("data/fig4/fig4d_ko_repeat_gain.csv") |>
          ko = gsub("MSH3","<i>MSH3</i>",ko),
          ko = gsub("PMS1","<i>PMS1</i>",ko),
          ko = fct_relevel(ko,
-                          "Empty vector"))
+                          "Empty vector")) |>
+  select(ko, culture_day, average_repeat_gain)
 
 fig4b_numbers <- fig4b_data |>
   group_by(ko, culture_day) |>
-  summarise(n = n())
+  summarise(n = n()) 
 
 (fig4b_g <- fig4b_data |>
   ggplot(aes(as.factor(culture_day), average_repeat_gain)) +
@@ -812,7 +807,8 @@ fig4c_data <- read_csv("data/fig4/fig4e_data_KO_strains.csv") |>
   mutate(gene_geno = gsub("MSH3","<i>MSH3</i>",gene_geno),
          gene_geno = gsub("PMS1","<i>PMS1</i>",gene_geno),
          gene_geno = fct_relevel(gene_geno,
-                          "+/+"))
+                          "+/+")) |>
+  select(day, gene_geno, cell_strain,weighted_repeat_gain)
 
 fig4c_numbers <- fig4c_data |>
   group_by(day,gene_geno) |>
@@ -906,7 +902,8 @@ plot_average_repeat_gain = function(df){
 ```
 
 ```{r}
-fig5a_data <- read_csv("data/fig5/fig5a_data_bran_instability.csv")
+fig5a_data <- read_csv("data/fig5/fig5a_data_bran_instability.csv") |>
+  select(day, average_repeat_gain, concentration)
 
 (fig5a_g <- fig5a_data |> 
  plot_average_repeat_gain()
@@ -958,7 +955,8 @@ slopes(fig5a_lm,
 ## Figure 5b
 
 ```{r}
-fig5b_data <- read_csv("data/fig5/fig5a_data_ris_instability.csv")
+fig5b_data <- read_csv("data/fig5/fig5a_data_ris_instability.csv") |>
+  select(day, average_repeat_gain, concentration)
 
 (fig5b_g <- fig5b_data |> 
  plot_average_repeat_gain()
@@ -1012,7 +1010,9 @@ slopes(fig5b_lm,
 ```{r}
 fig5c_data <- read_csv("data/fig5/fig5c_data.csv") |>
   mutate(drug_conc = ifelse(drug_conc == "500 nM Ris", "500 nM Ris.", drug_conc),
-         drug_conc = fct_relevel(drug_conc, "DMSO")) 
+         drug_conc = fct_relevel(drug_conc, "DMSO")) |>
+  select(drug_conc, Total_Masses)
+  
 
 (
 fig5c_g <- fig5c_data |>
@@ -1045,7 +1045,8 @@ fig5c_data |>
 ```{r}
 fig5d_data <- read_csv("data/fig5/fig5d_data.csv") |>
   mutate(drug_conc = ifelse(drug_conc == "500 nM Ris", "500 nM Ris.", drug_conc),
-         drug_conc = fct_relevel(drug_conc, "DMSO")) 
+         drug_conc = fct_relevel(drug_conc, "DMSO"))  |>
+  select(drug_conc, Mean)
 
 
 (fig5d_g <- fig5d_data |>
@@ -1096,7 +1097,8 @@ ggsave("outputs/fig5_bottom.pdf",
 ## Figure 6b
 
 ```{r}
-fig6b_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv")
+fig6b_data <- read_csv("data/fig6/fig6c_data_pms1_dose.csv") |>
+  select(treatment, peak_prop, drug)
 
 (fig6b_g <- fig6b_data %>%
   ggplot(aes(treatment, peak_prop, colour = drug)) +
@@ -1134,7 +1136,8 @@ fig7c_data <- read_csv("data/fig7/fig7c_data_ddPCR.csv") |>
     mutate(treatment = str_replace(treatment, "nM\nBranaplam", "nM Bran."),
            genotype = gsub("PMS1","<i>PMS1</i>",genotype),
            genotype = gsub("delta", "&Delta;", genotype)) |>
-    filter(target == "PMS1") 
+    filter(target == "PMS1") |>
+  select(genotype, treatment, cell_line, rel_dmso, ratio)
 
 
 fig7c_numbers <- fig7c_data |>
@@ -1175,14 +1178,12 @@ fig7c_numbers <- fig7c_data |>
 
 ```
 
-
 Are PMS1 delta PE cells different to WT for non-treated?
 
 ```{r}
 fig7c_lm_ratio <-  lm(ratio ~ genotype * treatment, data = fig7c_data)
 
 ```
-
 
 ```{r}
 
@@ -1193,15 +1194,11 @@ comparisons(fig7c_lm_ratio,
 
 ```
 
-
 effect of treatment
 
 ```{r}
 fig7c_lm <-  lm(rel_dmso ~ genotype * treatment, data = fig7c_data)
 ```
-
-
-
 
 ```{r}
 comparisons(
@@ -1249,7 +1246,8 @@ fig7d_data <- read_csv("data/fig7/fig7d_data_instability1.csv") |>
          genotype = gsub("delta", "&Delta;", genotype),
          genotype = gsub("\n", " ", genotype),
          genotype = fct_relevel(genotype,
-                                "WT")) 
+                                "WT")) |>
+  select(cell_line, genotype, treatment, normalised_gain)
 
 fig7d_numbers <- fig7d_data |>
   group_by(genotype, treatment) |>
@@ -1338,7 +1336,8 @@ fig7e_data <- read_csv("data/fig7/fig7e_data_instability2.csv") |>
                                 "WT"),
          treatment = str_replace(treatment, "nM\n", "nM "),
          treatment = fct_relevel(treatment,
-                                 "DMSO"))
+                                 "DMSO")) |>
+  select(genotype, treatment, cell_line, normalised_gain)
 
 fig7e_numbers <- fig7e_data |>
   group_by(genotype, treatment) |>
@@ -1411,7 +1410,7 @@ same change with 100 or 200 nM for the different genotypes?
 ```{r}
 comparisons(
   fig7e_lm,
-  variables = list(treatment = c("DMSO", "100 nM Bran.")),
+  variables = list(treatment = unique(fig7e_data$treatment)[1:2]),
   newdata = datagrid(genotype = unique(fig7e_data$genotype)),
   hypothesis = "b1 = b2"
 ) |>
@@ -1420,10 +1419,11 @@ comparisons(
 ```
 
 200 nM
+
 ```{r}
 comparisons(
   fig7e_lm,
-  variables = list(treatment = c("DMSO", "200 nM Bran.")),
+  variables = list(treatment = unique(fig7e_data$treatment)[c(1,3)]),
   newdata = datagrid(genotype = unique(fig7e_data$genotype)),
   hypothesis = "b1 = b2"
 ) |>
@@ -1458,7 +1458,8 @@ ggsave("outputs/fig7.pdf",
 fig8a_data <- read_csv("data/fig8/fig8a_data_overlap.csv") |>
   mutate(
     across(c("denominator", "numerator"), \(x) str_replace(x, " et","\net")),
-    denominator = fct_rev(denominator))
+    denominator = fct_rev(denominator)) |>
+  select(numerator, denominator, percent,n_genes, n,drug)
 
 (
 fig8a_g <- fig8a_data |>
@@ -1482,13 +1483,13 @@ fig8a_g <- fig8a_data |>
 )
 ```
 
-
 ## Figure 8c
 
 ```{r}
 
 fig8c_data <- read_csv("data/fig8/fig8c_spliceai_data.csv") |>
-  filter(allele_freq > 0)
+  filter(allele_freq > 0) |>
+  select(allele_freq, splice_ai_score, exon_annotation, gene_symbol, drug)
 
 
 (fig8c_g <-  fig8c_data |>   
@@ -1537,7 +1538,8 @@ fig8c_data <- read_csv("data/fig8/fig8c_spliceai_data.csv") |>
 fig8d_data <- read_csv("data/fig8/fig8d_validation.csv") |>
   mutate(gene = str_replace(gene, "\n", " ")) |>
   mutate(gene = gsub("TENT2","<i>TENT2</i>",gene),
-         gene = gsub("ZFP82","<i>ZFP82</i>",gene))
+         gene = gsub("ZFP82","<i>ZFP82</i>",gene)) |>
+  select(gene, snps, drug_treatment, cell_line_unique_number, peak_prop)
 
 
 fig8d_data_n <- fig8d_data |>
@@ -1590,7 +1592,6 @@ fig8d_data %>%
 
 ```
 
-
 ## Figure 8 plots combined
 
 ```{r}
@@ -1624,13 +1625,13 @@ ggsave("outputs/fig8_bottom.pdf",
 
 ```
 
-
 # Sup Figure 2
 
 ```{r}
 sup_fig2_data <- read_csv("data/sup_fig2/sup_fig2a_data.csv") |>
     mutate(treatment = fct_relevel(treatment,
-                                 c("DMSO", "100","200")))
+                                 c("DMSO", "100","200"))) |>
+  select(treatment, peak_prop, snp)
 
 (sup_fig2_g <- sup_fig2_data |>
   ggplot(aes(treatment, peak_prop, colour = snp)) +
@@ -1652,7 +1653,6 @@ ggsave("outputs/sup_fig2.png",
 
 ## Sup Figure 3b
 
-
 ```{r}
 
 sup_fig3b_data <- read_csv("data/fig3/fig3d_data_traces.csv") |> 
@@ -1664,7 +1664,8 @@ sup_fig3b_data <- read_csv("data/fig3/fig3d_data_traces.csv") |>
                                          unique(facet_label)[3],
                                          unique(facet_label)[2])),
          strain = fct_reorder(paste0("Cell strain #",strain), strain)
-  )
+  ) |>
+  select(repeats, rel_signal, dox,facet_label, strain, modal_repeat)
 
 (sup_fig3b_g <-  sup_fig3b_data |>
   ggplot(aes(repeats, rel_signal, colour = dox)) +
@@ -1692,7 +1693,8 @@ sup_fig3b_data <- read_csv("data/fig3/fig3d_data_traces.csv") |>
 
 ```{r}
 
-sup_fig3c_data <- read_csv("data/sup_fig3/sup_fig3c_data_flow.csv")
+sup_fig3c_data <- read_csv("data/sup_fig3/sup_fig3c_data_flow.csv") |>
+  select(group, FL46.A )
 
 
 
@@ -1735,13 +1737,12 @@ sup_fig3c_g <- sup_fig3c_data |>
 
 ```
 
-
-
 ## Sup Figure 3d
 
 ```{r}
 
-sup_fig3d_data <- read_csv("data/sup_fig3/sup_fig3d_data_metics.csv")
+sup_fig3d_data <- read_csv("data/sup_fig3/sup_fig3d_data_metics.csv") |>
+  select(dox_status, average_repeat_gain,metrics_grouping)
 (
 sup_fig3d_g <- sup_fig3d_data |>
   ggplot(aes(fct_rev(dox_status), average_repeat_gain, 
@@ -1755,7 +1756,6 @@ sup_fig3d_g <- sup_fig3d_data |>
 
 )
 ```
-
 
 ```{r}
 
@@ -1779,16 +1779,13 @@ ggsave("outputs/sup_fig3_bottom.pdf",
 
 ```
 
-
-
-
-
 ###### change everything below!
 
 ## Sup Figure 4a
 
 ```{r}
-sup_fig4_data <- read_csv("data/sup_fig4/sup_fig4_data.csv")
+sup_fig4_data <- read_csv("data/sup_fig4/sup_fig4_data.csv") |>
+  select(target, grna, percent_reads, editing_outcome, total_reads)
 
 
 (sup_fig4a_g <- sup_fig4_data |>
@@ -1816,7 +1813,8 @@ sup_fig4b_data <- read_csv("data/sup_fig4/sup_fig4b_data_traces.csv") |>
   mutate(gene_geno = fct_relevel(gene_geno,
                                  "+/+", "MSH3-/-", "PMS1+/-", "PMS1-/-" )) |>
   group_by(gene_geno) |>
-  mutate(modal_repeat = max(repeats[which(day == 0 & norm_signal == max(norm_signal))]))
+  mutate(modal_repeat = max(repeats[which(day == 0 & norm_signal == max(norm_signal))])) |>
+  select(repeats, norm_signal, gene_geno, modal_repeat, day)
 
 
 (sup_fig4b_g <- sup_fig4b_data  |>
@@ -1864,7 +1862,8 @@ ggsave("outputs/sup_fig4.pdf",
 
 ```{r}
 
-sup_fig5a_data <- read_csv("data/sup_fig5/sup_fig5a_data_cytotox_growth.csv")
+sup_fig5a_data <- read_csv("data/sup_fig5/sup_fig5a_data_cytotox_growth.csv") |>
+  select(Elapsed, drug_conc, mean_conf, exp, upper, lower)
 
 sup_fig5a_labels <- sup_fig5a_data |>
   filter(Elapsed == max(Elapsed)) |>
@@ -1899,7 +1898,8 @@ sup_fig5a_labels <- sup_fig5a_data |>
 
 ```{r}
 
-sup_fig5b_data <- read_csv("data/sup_fig5/sup_fig5b_data_cytotox_death.csv")
+sup_fig5b_data <- read_csv("data/sup_fig5/sup_fig5b_data_cytotox_death.csv") |>
+  select(Elapsed, drug_conc, mean_count, exp, upper, lower)
 
 sup_fig5b_labels <- sup_fig5b_data |>
   filter(Elapsed == max(Elapsed)) |>
@@ -1953,7 +1953,8 @@ ggsave("outputs/sup_fig5.png",
 sup_fig11a_data <- read_csv("data/sup_fig11/sup_fig11a_data.csv") |>
   mutate(genotype = gsub("HTT","<i>HTT</i>",genotype),
          genotype = gsub("PMS1","<i>PMS1</i>",genotype),
-         genotype = gsub("delta", "&Delta;", genotype))
+         genotype = gsub("delta", "&Delta;", genotype)) |>
+  select(treatment, genotype, weighted_repeat_gain, cell_line)
 
 (sup_fig11a_g <- sup_fig11a_data |>  
   mutate(treatment = str_replace(treatment, "nM\n", "nM "),
@@ -1985,7 +1986,8 @@ sup_fig11a_data <- read_csv("data/sup_fig11/sup_fig11a_data.csv") |>
 
 ```{r}
 
-sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") 
+sup_fig11b_data <- read_csv("data/sup_fig11/sup_fig11b_data.csv") |>
+  select(treatment, genotype, weighted_repeat_gain, cell_line)
 
 (sup_fig11b_g <- sup_fig11b_data |>
   mutate(treatment = str_replace(treatment, "nM\n", "nM "),
@@ -2030,13 +2032,13 @@ ggsave("outputs/sup_fig11.svg",
 
 ```
 
-
 # Sup Figure 12
 
 ```{r}
 
 sup_fig12_data <- read_csv("data/sup_fig12/sup_fig12_data.csv") |>
-       mutate(concentration = as.numeric(concentration)) 
+       mutate(concentration = as.numeric(concentration)) |>
+  select(concentration, proportion2, gene)
 
 (sup_fig12_g <- sup_fig12_data |>
   ggplot(aes(concentration, proportion2)) +
@@ -2058,3 +2060,29 @@ ggsave("outputs/sup_fig12.svg",
        height = 3.5)
 
 ```
+
+
+
+```{r, include=FALSE}
+
+
+object_names <- ls()
+
+str_detect(object_names, "_data")
+
+data_names <- object_names[which(str_detect(object_names, "_data") & !str_detect(object_names, "plot") & !str_detect(object_names, "_n"))]
+
+data_list <- vector("list", length = length(data_names))
+
+for (i in seq_along(data_names)) {
+  data_list[[i]] <- .GlobalEnv[[data_names[i]]]
+}
+
+names(data_list) <- str_remove(data_names, "_data")
+
+openxlsx::write.xlsx(data_list, file = "source_data.xlsx")
+
+
+```
+
+
